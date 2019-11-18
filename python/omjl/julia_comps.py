@@ -11,6 +11,10 @@ def _initialize_common(self):
 def _setup_common(self):
     comp_data = self.options['julia_comp_data']
     self._julia_setup = get_pysetup(comp_data)
+    print(f"comp_data =\n{comp_data}")
+    print(f"dir(comp_data) =\n{dir(comp_data)}")
+    print(f"comp_data.a = {comp_data.a}")
+    # print(f"comp_data.inputs_ncv_ = {comp_data.inputs_ncv}")
     input_data, output_data, partials_data = self._julia_setup(comp_data)
 
     for var in input_data:

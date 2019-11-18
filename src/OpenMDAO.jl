@@ -16,9 +16,11 @@ abstract type AbstractImplicitComp <: AbstractComp end
 
 # Needed to avoid "Don't know how to convert PyObject to <some type> errors."
 function convert(::Type{T}, po::PyObject) where {T<:AbstractComp}
+    println("in AbstractComp's convert")
     # Explaination of the difference between fields and properties:
     # https://discourse.julialang.org/t/whats-the-difference-between-fields-and-properties/12495
     args = [getproperty(po, n) for n in fieldnames(T)]
+    println("args = $args")
     return T(args...)
 end
 
@@ -51,11 +53,11 @@ function solve_nonlinear!(self::UnionAll, inputs, outputs)
     error("called dummy base guess_nonlinear! with self{$(typeof(self))}")
 end
 
-struct VarData
-    name
-    shape
-    val
-    units
+struct VarData{T, N}
+    name::AbstractString
+    shape::NTuple{N, Int64}
+    val::T
+    units::Union{AbstractString, Nothing}
 end
 
 VarData(name, shape, val; units=nothing) = VarData(name, shape, val, units)
@@ -75,6 +77,7 @@ function get_pysetup(self::T) where {T}
     ret = Tuple{Vector{VarData},  # input metadata
                 Vector{VarData},  # output metadata
                 Vector{PartialsData}}  # partials metadata
+    println("finding setup function for $(T)")
     return pyfunctionret(setup, ret, args...)
 end
 
