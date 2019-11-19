@@ -4,5 +4,7 @@ authors = ["Ingraham, Daniel James (GRC-LTV0) <daniel.j.ingraham@nasa.gov>"]
 version = "0.1.0"
 
 [deps]
+CompositeArrays = "a5494894-06f3-11ea-09b4-23103990cafc"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 NamedTupleTools = "d9ec5142-1e00-5aa0-9d6a-321866360f50"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
