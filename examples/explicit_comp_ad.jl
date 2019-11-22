@@ -18,19 +18,36 @@ function SquareIt(a::TF) where {TF}
 end
 
 function OpenMDAO.setup(self::SquareIt)
+    # inputs = [
+    #     VarData("x", (1,), 2.0),
+    #     VarData("y", (1,), 3.0)]
+
+    # outputs = [
+    #     VarData("z1", (1,), 2.0),
+    #     VarData("z2", (1,), 3.0)]
+
+    # partials = [
+    #     PartialsData("z1", "x"),
+    #     PartialsData("z1", "y"),
+    #     PartialsData("z2", "x"),
+    #     PartialsData("z2", "y")]
+
     inputs = [
-        VarData("x", (1,), 2.0),
-        VarData("y", (1,), 3.0)]
+        VarData("x", shape=1, val=[2.0]),
+        VarData("y", shape=1, val=3.0)
+    ]
 
     outputs = [
-        VarData("z1", (1,), 2.0),
-        VarData("z2", (1,), 3.0)]
+        VarData("z1", shape=(1,), val=[2.0]),
+        VarData("z2")  #default is just 1.0  , shape=(1,), val=3.0)
+    ]
 
     partials = [
         PartialsData("z1", "x"),
         PartialsData("z1", "y"),
         PartialsData("z2", "x"),
-        PartialsData("z2", "y")]
+        PartialsData("z2", "y")
+    ]
 
     return inputs, outputs, partials
 end
