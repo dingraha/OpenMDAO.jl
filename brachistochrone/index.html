@@ -1,0 +1,3105 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>A Simple Dymos Example · OpenMDAO.jl</title><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.045/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">OpenMDAO.jl</a></span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><a class="tocitem" href="../simple_paraboloid/">A Simple Example</a></li><li><a class="tocitem" href="../nonlinear_circuit/">A More Complicated Example</a></li><li><a class="tocitem" href="../shape_by_conn/">Variable Shapes at Runtime</a></li><li class="is-active"><a class="tocitem" href>A Simple Dymos Example</a><ul class="internal"><li><a class="tocitem" href="#Preamble"><span>Preamble</span></a></li><li><a class="tocitem" href="#The-AbstractExplicitComp-struct"><span>The <code>AbstractExplicitComp</code> <code>struct</code></span></a></li><li><a class="tocitem" href="#OpenMDAOCore.setup"><span><code>OpenMDAOCore.setup</code></span></a></li><li><a class="tocitem" href="#OpenMDAOCore.compute!-and-OpenMDAOCore.compute_partials!"><span><code>OpenMDAOCore.compute!</code> and <code>OpenMDAOCore.compute_partials!</code></span></a></li><li><a class="tocitem" href="#The-run-script"><span>The run script</span></a></li></ul></li><li><a class="tocitem" href="../auto_dense_ad/">Auto-Dense Examples</a></li><li><a class="tocitem" href="../auto_sparse_ad/">Auto-Sparse Examples</a></li><li><a class="tocitem" href="../matrix_free_ad/">Auto-Matrix-Free Examples</a></li><li><a class="tocitem" href="../creating_python_packages/">Creating Python Packages That Use OpenMDAOCore.jl</a></li><li><a class="tocitem" href="../reference/">API Reference</a></li><li><a class="tocitem" href="../limitations/">Limitations</a></li><li><a class="tocitem" href="../dev_docs/">Developer Docs</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>A Simple Dymos Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>A Simple Dymos Example</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/dingraha/OpenMDAO.jl/blob/master/docs/src/brachistochrone.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="A-Simple-Dymos-Example"><a class="docs-heading-anchor" href="#A-Simple-Dymos-Example">A Simple Dymos Example</a><a id="A-Simple-Dymos-Example-1"></a><a class="docs-heading-anchor-permalink" href="#A-Simple-Dymos-Example" title="Permalink"></a></h1><p>We can also use OpenMDAO.jl Components within a Dymos ODE. This example will implement <a href="https://openmdao.github.io/dymos/examples/brachistochrone/brachistochrone.html">the Brachistochrone example from the Dymos docs</a> using Julia.</p><h2 id="Preamble"><a class="docs-heading-anchor" href="#Preamble">Preamble</a><a id="Preamble-1"></a><a class="docs-heading-anchor-permalink" href="#Preamble" title="Permalink"></a></h2><p>Let&#39;s make things easier on ourselves and import the <code>VarData</code> and <code>PartialsData</code> names into our local namespace:</p><pre><code class="language-julia hljs">using OpenMDAOCore: OpenMDAOCore, VarData, PartialsData</code></pre><h2 id="The-AbstractExplicitComp-struct"><a class="docs-heading-anchor" href="#The-AbstractExplicitComp-struct">The <code>AbstractExplicitComp</code> <code>struct</code></a><a id="The-AbstractExplicitComp-struct-1"></a><a class="docs-heading-anchor-permalink" href="#The-AbstractExplicitComp-struct" title="Permalink"></a></h2><p>The ODE component for the brachistochrone has two options:</p><ul><li><code>num_nodes</code>, the number of nodes used to descritize the trajectory of the bead.</li><li><code>static_gravity</code>, a flag to indicate whether gravity should vary along the trajectory (and thus have length <code>num_nodes</code>) or if it should be constant (and thus be a scalar).</li></ul><p>We&#39;ll use a default value of <code>false</code> for <code>static_gravity</code>, just like the Python implementation in the Dymos docs:</p><pre><code class="language-julia hljs">struct BrachistochroneODE &lt;: OpenMDAOCore.AbstractExplicitComp
+    num_nodes::Int
+    static_gravity::Bool
+end
+
+# `static_gravity` set to `false` by default.
+BrachistochroneODE(; num_nodes, static_gravity=false) = BrachistochroneODE(num_nodes, static_gravity)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Main.BrachistochroneODE</code></pre><h2 id="OpenMDAOCore.setup"><a class="docs-heading-anchor" href="#OpenMDAOCore.setup"><code>OpenMDAOCore.setup</code></a><a id="OpenMDAOCore.setup-1"></a><a class="docs-heading-anchor-permalink" href="#OpenMDAOCore.setup" title="Permalink"></a></h2><p>Next we&#39;ll define the <code>OpenMDAOCore.setup</code> function:</p><pre><code class="language-julia hljs">function OpenMDAOCore.setup(self::BrachistochroneODE)
+	nn = self.num_nodes
+
+	# Inputs
+    input_data = Vector{VarData}()
+    push!(input_data, VarData(&quot;v&quot;; val=zeros(nn), units=&quot;m/s&quot;))
+	if self.static_gravity
+        push!(input_data, VarData(&quot;g&quot;, val=9.80665, units=&quot;m/s/s&quot;, tags=[&quot;dymos.static_target&quot;]))
+	else
+        push!(input_data, VarData(&quot;g&quot;, val=9.80665 * ones(nn), units=&quot;m/s/s&quot;))
+    end
+    push!(input_data, VarData(&quot;theta&quot;, val=ones(nn), units=&quot;rad&quot;))
+
+    # Outputs
+    output_data = Vector{VarData}()
+    push!(output_data, VarData(&quot;xdot&quot;, val=zeros(nn), units=&quot;m/s&quot;, tags=[&quot;dymos.state_rate_source:x&quot;, &quot;dymos.state_units:m&quot;]))
+    push!(output_data, VarData(&quot;ydot&quot;, val=zeros(nn), units=&quot;m/s&quot;, tags=[&quot;dymos.state_rate_source:y&quot;, &quot;dymos.state_units:m&quot;]))
+    push!(output_data, VarData(&quot;vdot&quot;, val=zeros(nn), units=&quot;m/s**2&quot;, tags=[&quot;dymos.state_rate_source:v&quot;, &quot;dymos.state_units:m/s&quot;]))
+    push!(output_data, VarData(&quot;check&quot;, val=zeros(nn), units=&quot;m/s&quot;))
+
+    # Setup partials
+    arange = 0:nn-1
+    partials_data = Vector{PartialsData}()
+    push!(partials_data, PartialsData(&quot;vdot&quot;, &quot;theta&quot;; rows=arange, cols=arange))
+
+    push!(partials_data, PartialsData(&quot;xdot&quot;, &quot;v&quot;; rows=arange, cols=arange))
+    push!(partials_data, PartialsData(&quot;xdot&quot;, &quot;theta&quot;; rows=arange, cols=arange))
+
+    push!(partials_data, PartialsData(&quot;ydot&quot;, &quot;v&quot;; rows=arange, cols=arange))
+    push!(partials_data, PartialsData(&quot;ydot&quot;, &quot;theta&quot;; rows=arange, cols=arange))
+
+    push!(partials_data, PartialsData(&quot;check&quot;, &quot;v&quot;; rows=arange, cols=arange))
+    push!(partials_data, PartialsData(&quot;check&quot;, &quot;theta&quot;; rows=arange, cols=arange))
+
+	if self.static_gravity
+		c = zeros(Int, self.num_nodes)
+        push!(partials_data, PartialsData(&quot;vdot&quot;, &quot;g&quot;; rows=arange, cols=c))
+	else
+        push!(partials_data, PartialsData(&quot;vdot&quot;, &quot;g&quot;; rows=arange, cols=arange))
+    end
+
+    return input_data, output_data, partials_data
+end</code></pre><p>This is probably the most complicated <code>setup</code> we&#39;ve seen yet. A few things to note:</p><ul><li>We can change the size of the <code>g</code> (gravity) input and its sub-Jacobian using the <code>static_gravity</code> option in the <code>BrachistochroneODE</code> <code>struct</code>.</li><li>The <code>VarData</code> calls use <code>tags</code>, which are passed to the <code>ExplicitComponent.add_input</code> method using the <code>tags</code> keyword argument in OpenMDAO.</li><li>As we&#39;ll see, the job of a Dymos ODE is to compute the state rates from the states and controls. It turns out that in many (all) ODEs, these state rates for a given trajectory node only depend on the state and controls at that particular node. This implies that the Jacobian of the ODE calculation will be sparse. This example, like the original Python implementation, passes the sparsity pattern of the various sub-Jacobians to the <code>PartialsData</code> structs using the <code>rows</code> and <code>cols</code> keywords.</li></ul><h2 id="OpenMDAOCore.compute!-and-OpenMDAOCore.compute_partials!"><a class="docs-heading-anchor" href="#OpenMDAOCore.compute!-and-OpenMDAOCore.compute_partials!"><code>OpenMDAOCore.compute!</code> and <code>OpenMDAOCore.compute_partials!</code></a><a id="OpenMDAOCore.compute!-and-OpenMDAOCore.compute_partials!-1"></a><a class="docs-heading-anchor-permalink" href="#OpenMDAOCore.compute!-and-OpenMDAOCore.compute_partials!" title="Permalink"></a></h2><p>The <code>OpenMDAOCore.compute!</code> method for our ODE is fairly straightforward:</p><pre><code class="language-julia hljs">function OpenMDAOCore.compute!(self::BrachistochroneODE, inputs, outputs)
+	theta = inputs[&quot;theta&quot;]
+	cos_theta = cos.(theta)
+	sin_theta = sin.(theta)
+	g = inputs[&quot;g&quot;]
+	v = inputs[&quot;v&quot;]
+
+	@. outputs[&quot;vdot&quot;] = g * cos_theta
+	@. outputs[&quot;xdot&quot;] = v * sin_theta
+	@. outputs[&quot;ydot&quot;] = -v * cos_theta
+	@. outputs[&quot;check&quot;] = v / sin_theta
+
+    return nothing
+end</code></pre><p>The <code>@.</code> macro tells Julia to use <a href="https://docs.julialang.org/en/v1/manual/arrays/#Broadcasting">broadcasting</a> for the array calculations (similar to NumPy broadcasting).</p><p>The <code>compute_partials!</code> method is also quite similar to the original Python implementation:</p><pre><code class="language-julia hljs">function OpenMDAOCore.compute_partials!(self::BrachistochroneODE, inputs, partials)
+	theta = inputs[&quot;theta&quot;]
+	cos_theta = cos.(theta)
+	sin_theta = sin.(theta)
+	g = inputs[&quot;g&quot;]
+	v = inputs[&quot;v&quot;]
+
+	@. partials[&quot;vdot&quot;, &quot;g&quot;] = cos_theta
+	@. partials[&quot;vdot&quot;, &quot;theta&quot;] = -g * sin_theta
+
+	@. partials[&quot;xdot&quot;, &quot;v&quot;] = sin_theta
+	@. partials[&quot;xdot&quot;, &quot;theta&quot;] = v * cos_theta
+
+	@. partials[&quot;ydot&quot;, &quot;v&quot;] = -cos_theta
+	@. partials[&quot;ydot&quot;, &quot;theta&quot;] = v * sin_theta
+
+	@. partials[&quot;check&quot;, &quot;v&quot;] = 1 / sin_theta
+	@. partials[&quot;check&quot;, &quot;theta&quot;] = -v * cos_theta / sin_theta ^ 2
+
+	return nothing
+end</code></pre><h2 id="The-run-script"><a class="docs-heading-anchor" href="#The-run-script">The run script</a><a id="The-run-script-1"></a><a class="docs-heading-anchor-permalink" href="#The-run-script" title="Permalink"></a></h2><p>We&#39;ll need the Dymos library to solve the Brachistochrone problem, of course:</p><pre><code class="language-julia hljs">using PythonCall: pyimport
+dm = pyimport(&quot;dymos&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Python: &lt;module &#39;dymos&#39; from &#39;/home/dingraha/projects/openmdao_jl_dev/ved/OpenMDAO.jl/docs/.CondaPkg/.pixi/envs/default/lib/python3.13/site-packages/dymos/__init__.py&#39;&gt;</code></pre><p>And then the rest of the script will be pretty much identical to the Python version, but written in Julia. We&#39;ll put it in a function that allows us to try out <code>static_gravity=false</code> and <code>static_gravity=true</code>.</p><pre><code class="language-julia hljs">using OpenMDAO: om, make_component  #, DymosifiedCompWrapper
+
+function doit(; static_gravity)
+  #
+  # Initialize the Problem and the optimization driver
+  #
+  p = om.Problem(model=om.Group())
+  p.driver = om.ScipyOptimizeDriver()
+  p.driver.declare_coloring()
+  #
+  # Create a trajectory and add a phase to it
+  #
+  traj = p.model.add_subsystem(&quot;traj&quot;, dm.Trajectory())
+
+  # `Trajectory.add_phase` expects a class that it can instantiate with the number of nodes used for the phase.
+  # That&#39;s easy enough to create with an anonymous function, where we create a function that takes the single keyword argument `num_nodes`, use that to create a `BrachistochroneODE` with the appropriate value for `static_gravity`, and then pass that to the `make_component` function that returns an OpenMDAO `Component`.
+  phase = traj.add_phase(&quot;phase0&quot;,
+                         dm.Phase(ode_class = (; num_nodes)-&gt;make_component(BrachistochroneODE(; num_nodes=num_nodes, static_gravity=static_gravity)),
+                                  transcription = dm.GaussLobatto(num_segments=10)))
+
+  #
+  # Set the variables
+  #
+  phase.set_time_options(fix_initial=true, duration_bounds=(.5, 10))
+
+  phase.add_state(&quot;x&quot;, fix_initial=true, fix_final=true)
+
+  phase.add_state(&quot;y&quot;, fix_initial=true, fix_final=true)
+
+  phase.add_state(&quot;v&quot;, fix_initial=true, fix_final=false)
+
+  phase.add_control(&quot;theta&quot;, continuity=true, rate_continuity=true,
+                    units=&quot;deg&quot;, lower=0.01, upper=179.9)
+
+  phase.add_parameter(&quot;g&quot;, units=&quot;m/s**2&quot;, val=9.80665)
+
+  #
+  # Minimize time at the end of the phase
+  #
+  phase.add_objective(&quot;time&quot;, loc=&quot;final&quot;, scaler=10)
+  #
+  p.model.linear_solver = om.DirectSolver()
+  #
+  # Setup the Problem
+  #
+  p.setup()
+
+  #
+  # Set the initial values
+  #
+  p[&quot;traj.phase0.t_initial&quot;] = 0.0
+  p[&quot;traj.phase0.t_duration&quot;] = 2.0
+
+  p.set_val(&quot;traj.phase0.states:x&quot;, phase.interp(&quot;x&quot;, ys=[0, 10]))
+  p.set_val(&quot;traj.phase0.states:y&quot;, phase.interp(&quot;y&quot;, ys=[10, 5]))
+  p.set_val(&quot;traj.phase0.states:v&quot;, phase.interp(&quot;v&quot;, ys=[0, 9.9]))
+  p.set_val(&quot;traj.phase0.controls:theta&quot;, phase.interp(&quot;theta&quot;, ys=[5, 100.5]))
+
+  #
+  # Solve for the optimal trajectory
+  #
+  dm.run_problem(p)
+
+  # Check the results
+  println(&quot;static_gravity = $static_gravity, elapsed time = $(p.get_val(&quot;traj.phase0.timeseries.time&quot;)[-1]) (should be 1.80164719)&quot;)
+end
+
+doit(; static_gravity=false)
+doit(; static_gravity=true)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">/home/dingraha/projects/openmdao_jl_dev/ved/OpenMDAO/openmdao/utils/relevance.py:1234: OpenMDAOWarning:The top level group has a nonlinear solver that computes gradients, so the entire model will be included in the optimization iteration.
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	1.308096639801875
+  (72, 0)	1.84430711577758
+  (102, 0)	1.298183581557197
+  (103, 0)	1.5676360269173386
+  (104, 0)	1.9792824524507668
+  (132, 0)	1.996729174777387
+  (133, 0)	1.3859853078315325
+  (134, 0)	1.628503741282716
+  (162, 0)	1.1312386930596057
+  (164, 0)	1.6361967353888314
+  (166, 0)	1.134880090459015
+  (1, 1)	1.181883664777017
+  (73, 1)	1.6145452458231464
+  (102, 1)	1.1184812231420354
+  (104, 1)	1.794551802420121
+  (132, 1)	1.3302316293731962
+  (133, 1)	1.9787393934057875
+  (134, 1)	1.9130173169647113
+  (164, 1)	1.7410405761134973
+  (166, 1)	1.2619813617393825
+  (2, 2)	1.1353016228684967
+  (74, 2)	1.5288660801387801
+  (75, 2)	1.7167392698602506
+  (102, 2)	1.6672846952670581
+  (103, 2)	1.523384098571233
+  :	:
+  (809, 809)	1.38538014334405
+  (810, 810)	1.1433725398749857
+  (811, 811)	1.6598663471339927
+  (812, 812)	1.371300894303991
+  (813, 813)	1.1514190235659738
+  (814, 814)	1.059058040071673
+  (815, 815)	1.2422733252986307
+  (816, 816)	1.3960801493224027
+  (817, 817)	1.673280176966479
+  (818, 818)	1.3133529699950932
+  (819, 819)	1.5626214120073039
+  (820, 820)	1.7045078018263342
+  (821, 821)	1.3621334949989579
+  (822, 822)	1.2107755913606368
+  (823, 823)	1.7772524276424937
+  (824, 824)	1.110253833502278
+  (825, 825)	1.9320315477114645
+  (826, 826)	1.0588232315256096
+  (827, 827)	1.7478192726537476
+  (828, 828)	1.3345948953683733
+  (829, 829)	1.3203301904107505
+  (830, 830)	1.816897712820436
+  (831, 831)	1.6009836850870478
+  (832, 832)	1.0564172175274804
+  (833, 833)	1.7815663401674433
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	1.638721188582191
+  (72, 0)	1.775958145068109
+  (102, 0)	1.7864474386386044
+  (103, 0)	1.4962439173860171
+  (104, 0)	1.9933888451492998
+  (132, 0)	1.1413770280569875
+  (133, 0)	1.6939806133170645
+  (134, 0)	1.9959867546452705
+  (162, 0)	1.2724566273856461
+  (164, 0)	1.8359639015113571
+  (166, 0)	1.7834767847981898
+  (1, 1)	1.452655085124088
+  (73, 1)	1.0290356779787935
+  (102, 1)	1.255820291905719
+  (104, 1)	1.350474001722422
+  (132, 1)	1.245124013977117
+  (133, 1)	1.4235829715644799
+  (134, 1)	1.4683154526527904
+  (164, 1)	1.9770563673836925
+  (166, 1)	1.0712593497822613
+  (2, 2)	1.337403072219875
+  (74, 2)	1.9217160532852948
+  (75, 2)	1.81874912772614
+  (102, 2)	1.380632921434339
+  (103, 2)	1.8885204357766763
+  :	:
+  (809, 809)	1.6598475852568022
+  (810, 810)	1.4775772049724658
+  (811, 811)	1.0740878511743923
+  (812, 812)	1.7321236893480023
+  (813, 813)	1.5054532041399722
+  (814, 814)	1.7850040500812974
+  (815, 815)	1.2648497303690278
+  (816, 816)	1.5703268027918755
+  (817, 817)	1.2990912971876527
+  (818, 818)	1.8519074565389406
+  (819, 819)	1.984465578184269
+  (820, 820)	1.9834810490754227
+  (821, 821)	1.1208552695197072
+  (822, 822)	1.0767102654043523
+  (823, 823)	1.1276690254799129
+  (824, 824)	1.1798690193164907
+  (825, 825)	1.5028088842057823
+  (826, 826)	1.287233370454326
+  (827, 827)	1.0752978297172238
+  (828, 828)	1.2992342379749449
+  (829, 829)	1.9015804080213954
+  (830, 830)	1.2725671779815326
+  (831, 831)	1.11760022319209
+  (832, 832)	1.8447207395532148
+  (833, 833)	1.5491548040356737
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	1.5550871966430697
+  (72, 0)	1.8355875516306845
+  (102, 0)	1.4136385106688045
+  (103, 0)	1.8297412990733573
+  (104, 0)	1.987318426961778
+  (132, 0)	1.3354735603160026
+  (133, 0)	1.1324918599972356
+  (134, 0)	1.8485134193577784
+  (162, 0)	1.907608693504307
+  (164, 0)	1.8894434459889555
+  (166, 0)	1.8804414621174512
+  (1, 1)	1.0182037051702402
+  (73, 1)	1.3947901052411549
+  (102, 1)	1.5038971982209584
+  (104, 1)	1.4069285344576878
+  (132, 1)	1.886125952435083
+  (133, 1)	1.2282453642003723
+  (134, 1)	1.3720674232569359
+  (164, 1)	1.9653688625855903
+  (166, 1)	1.5243109136197133
+  (2, 2)	1.4127154505025863
+  (74, 2)	1.881709302912169
+  (75, 2)	1.1828553769803833
+  (102, 2)	1.779583366675737
+  (103, 2)	1.6440669644579762
+  :	:
+  (809, 809)	1.0152476786949636
+  (810, 810)	1.3268156874523136
+  (811, 811)	1.4815717520085854
+  (812, 812)	1.959883856347113
+  (813, 813)	1.9373912038757195
+  (814, 814)	1.3039804782036626
+  (815, 815)	1.4195435167870327
+  (816, 816)	1.0619796321716728
+  (817, 817)	1.2544756583859387
+  (818, 818)	1.4639481959759273
+  (819, 819)	1.724429103312151
+  (820, 820)	1.2352814919542605
+  (821, 821)	1.7948090243657946
+  (822, 822)	1.6214541071562287
+  (823, 823)	1.0474774946527279
+  (824, 824)	1.6205962308072337
+  (825, 825)	1.8665911006981646
+  (826, 826)	1.80088094535308
+  (827, 827)	1.4505629565945737
+  (828, 828)	1.0136654049248208
+  (829, 829)	1.346800319182138
+  (830, 830)	1.6447291726252242
+  (831, 831)	1.5956752741799456
+  (832, 832)	1.779387471760129
+  (833, 833)	1.8829399210933073
+
+Jacobian shape: (40, 50)  (13.40% nonzero)
+FWD solves: 8   REV solves: 0
+Total colors vs. total size: 8 vs 50  (84.00% improvement)
+
+Sparsity computed using tolerance: 1e-25.
+Dense total jacobian for Problem &#39;problem55&#39; was computed 3 times.
+Time to compute sparsity:   0.1841 sec
+Time to compute coloring:   0.0213 sec
+Coloring created on: 2025-12-01 09:20:48
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-15.000000000000004
+  (103, 0)	-5.000000000000001
+  (104, 0)	5.000000000000001
+  (132, 0)	100.00000000000004
+  (133, 0)	100.00000000000004
+  (134, 0)	100.00000000000004
+  (162, 0)	1.0
+  (164, 0)	-15.000000000000004
+  (166, 0)	100.00000000000004
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	20.000000000000004
+  (104, 1)	-20.000000000000004
+  (132, 1)	-200.00000000000009
+  (133, 1)	-200.00000000000009
+  (134, 1)	-200.00000000000009
+  (164, 1)	20.000000000000004
+  (166, 1)	-200.00000000000009
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.000000000000001
+  (103, 2)	5.000000000000001
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.91153336986935
+  (103, 0)	-5.63717778995645
+  (104, 0)	5.63717778995645
+  (132, 0)	127.11109374231314
+  (133, 0)	127.11109374231314
+  (134, 0)	127.11109374231314
+  (162, 0)	1.0
+  (164, 0)	-16.91153336986935
+  (166, 0)	127.11109374231314
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.5487111598258
+  (104, 1)	-22.5487111598258
+  (132, 1)	-254.2221874846263
+  (133, 1)	-254.2221874846263
+  (134, 1)	-254.2221874846263
+  (164, 1)	22.5487111598258
+  (166, 1)	-254.2221874846263
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.63717778995645
+  (103, 2)	5.63717778995645
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.631369205200123
+  (103, 0)	-5.543789735066707
+  (104, 0)	5.543789735066707
+  (132, 0)	122.93441850652397
+  (133, 0)	122.93441850652397
+  (134, 0)	122.93441850652397
+  (162, 0)	1.0
+  (164, 0)	-16.631369205200123
+  (166, 0)	122.93441850652397
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.17515894026683
+  (104, 1)	-22.17515894026683
+  (132, 1)	-245.86883701304794
+  (133, 1)	-245.86883701304794
+  (134, 1)	-245.86883701304794
+  (164, 1)	22.17515894026683
+  (166, 1)	-245.86883701304794
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.543789735066707
+  (103, 2)	5.543789735066707
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.633295862818
+  (103, 0)	-5.5444319542726666
+  (104, 0)	5.5444319542726666
+  (132, 0)	122.96290278223928
+  (133, 0)	122.96290278223928
+  (134, 0)	122.96290278223928
+  (162, 0)	1.0
+  (164, 0)	-16.633295862818
+  (166, 0)	122.96290278223928
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.177727817090666
+  (104, 1)	-22.177727817090666
+  (132, 1)	-245.92580556447857
+  (133, 1)	-245.92580556447857
+  (134, 1)	-245.92580556447857
+  (164, 1)	22.177727817090666
+  (166, 1)	-245.92580556447857
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.5444319542726666
+  (103, 2)	5.5444319542726666
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.633308510774597
+  (103, 0)	-5.544436170258199
+  (104, 0)	5.544436170258199
+  (132, 0)	122.96308978426961
+  (133, 0)	122.96308978426961
+  (134, 0)	122.96308978426961
+  (162, 0)	1.0
+  (164, 0)	-16.633308510774597
+  (166, 0)	122.96308978426961
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.177744681032795
+  (104, 1)	-22.177744681032795
+  (132, 1)	-245.92617956853923
+  (133, 1)	-245.92617956853923
+  (134, 1)	-245.92617956853923
+  (164, 1)	22.177744681032795
+  (166, 1)	-245.92617956853923
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.544436170258199
+  (103, 2)	5.544436170258199
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.633371358541954
+  (103, 0)	-5.544457119513985
+  (104, 0)	5.544457119513985
+  (132, 0)	122.96401900051725
+  (133, 0)	122.96401900051725
+  (134, 0)	122.96401900051725
+  (162, 0)	1.0
+  (164, 0)	-16.633371358541954
+  (166, 0)	122.96401900051725
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.17782847805594
+  (104, 1)	-22.17782847805594
+  (132, 1)	-245.9280380010345
+  (133, 1)	-245.9280380010345
+  (134, 1)	-245.9280380010345
+  (164, 1)	22.17782847805594
+  (166, 1)	-245.9280380010345
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.544457119513985
+  (103, 2)	5.544457119513985
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.63368444585292
+  (103, 0)	-5.544561481950973
+  (104, 0)	5.544561481950973
+  (132, 0)	122.9686481085375
+  (133, 0)	122.9686481085375
+  (134, 0)	122.9686481085375
+  (162, 0)	1.0
+  (164, 0)	-16.63368444585292
+  (166, 0)	122.9686481085375
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.178245927803893
+  (104, 1)	-22.178245927803893
+  (132, 1)	-245.937296217075
+  (133, 1)	-245.937296217075
+  (134, 1)	-245.937296217075
+  (164, 1)	22.178245927803893
+  (166, 1)	-245.937296217075
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.544561481950973
+  (103, 2)	5.544561481950973
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.635221313628506
+  (103, 0)	-5.545073771209502
+  (104, 0)	5.545073771209502
+  (132, 0)	122.99137251262228
+  (133, 0)	122.99137251262228
+  (134, 0)	122.99137251262228
+  (162, 0)	1.0
+  (164, 0)	-16.635221313628506
+  (166, 0)	122.99137251262228
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.180295084838008
+  (104, 1)	-22.180295084838008
+  (132, 1)	-245.98274502524455
+  (133, 1)	-245.98274502524455
+  (134, 1)	-245.98274502524455
+  (164, 1)	22.180295084838008
+  (166, 1)	-245.98274502524455
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.545073771209502
+  (103, 2)	5.545073771209502
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.642218008887976
+  (103, 0)	-5.547406002962659
+  (104, 0)	5.547406002962659
+  (132, 0)	123.09485344682459
+  (133, 0)	123.09485344682459
+  (134, 0)	123.09485344682459
+  (162, 0)	1.0
+  (164, 0)	-16.642218008887976
+  (166, 0)	123.09485344682459
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.189624011850636
+  (104, 1)	-22.189624011850636
+  (132, 1)	-246.18970689364917
+  (133, 1)	-246.18970689364917
+  (134, 1)	-246.18970689364917
+  (164, 1)	22.189624011850636
+  (166, 1)	-246.18970689364917
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.547406002962659
+  (103, 2)	5.547406002962659
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.66090555865676
+  (103, 0)	-5.55363518621892
+  (104, 0)	5.55363518621892
+  (132, 0)	123.37145512643544
+  (133, 0)	123.37145512643544
+  (134, 0)	123.37145512643544
+  (162, 0)	1.0
+  (164, 0)	-16.66090555865676
+  (166, 0)	123.37145512643544
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.21454074487568
+  (104, 1)	-22.21454074487568
+  (132, 1)	-246.74291025287087
+  (133, 1)	-246.74291025287087
+  (134, 1)	-246.74291025287087
+  (164, 1)	22.21454074487568
+  (166, 1)	-246.74291025287087
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.55363518621892
+  (103, 2)	5.55363518621892
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.65132871878236
+  (103, 0)	-5.550442906260787
+  (104, 0)	5.550442906260787
+  (132, 0)	123.22966582264276
+  (133, 0)	123.22966582264276
+  (134, 0)	123.22966582264276
+  (162, 0)	1.0
+  (164, 0)	-16.65132871878236
+  (166, 0)	123.22966582264276
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201771625043147
+  (104, 1)	-22.201771625043147
+  (132, 1)	-246.45933164528552
+  (133, 1)	-246.45933164528552
+  (134, 1)	-246.45933164528552
+  (164, 1)	22.201771625043147
+  (166, 1)	-246.45933164528552
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550442906260787
+  (103, 2)	5.550442906260787
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651337697386506
+  (103, 0)	-5.550445899128835
+  (104, 0)	5.550445899128835
+  (132, 0)	123.22979871662442
+  (133, 0)	123.22979871662442
+  (134, 0)	123.22979871662442
+  (162, 0)	1.0
+  (164, 0)	-16.651337697386506
+  (166, 0)	123.22979871662442
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20178359651534
+  (104, 1)	-22.20178359651534
+  (132, 1)	-246.45959743324883
+  (133, 1)	-246.45959743324883
+  (134, 1)	-246.45959743324883
+  (164, 1)	22.20178359651534
+  (166, 1)	-246.45959743324883
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550445899128835
+  (103, 2)	5.550445899128835
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651333213285405
+  (103, 0)	-5.550444404428468
+  (104, 0)	5.550444404428468
+  (132, 0)	123.22973234660518
+  (133, 0)	123.22973234660518
+  (134, 0)	123.22973234660518
+  (162, 0)	1.0
+  (164, 0)	-16.651333213285405
+  (166, 0)	123.22973234660518
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201777617713873
+  (104, 1)	-22.201777617713873
+  (132, 1)	-246.45946469321035
+  (133, 1)	-246.45946469321035
+  (134, 1)	-246.45946469321035
+  (164, 1)	22.201777617713873
+  (166, 1)	-246.45946469321035
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550444404428468
+  (103, 2)	5.550444404428468
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651334142004252
+  (103, 0)	-5.550444714001417
+  (104, 0)	5.550444714001417
+  (132, 0)	123.22974609274507
+  (133, 0)	123.22974609274507
+  (134, 0)	123.22974609274507
+  (162, 0)	1.0
+  (164, 0)	-16.651334142004252
+  (166, 0)	123.22974609274507
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201778856005667
+  (104, 1)	-22.201778856005667
+  (132, 1)	-246.45949218549015
+  (133, 1)	-246.45949218549015
+  (134, 1)	-246.45949218549015
+  (164, 1)	22.201778856005667
+  (166, 1)	-246.45949218549015
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550444714001417
+  (103, 2)	5.550444714001417
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651337483295155
+  (103, 0)	-5.550445827765052
+  (104, 0)	5.550445827765052
+  (132, 0)	123.22979554781789
+  (133, 0)	123.22979554781789
+  (134, 0)	123.22979554781789
+  (162, 0)	1.0
+  (164, 0)	-16.651337483295155
+  (166, 0)	123.22979554781789
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201783311060208
+  (104, 1)	-22.201783311060208
+  (132, 1)	-246.45959109563577
+  (133, 1)	-246.45959109563577
+  (134, 1)	-246.45959109563577
+  (164, 1)	22.201783311060208
+  (166, 1)	-246.45959109563577
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550445827765052
+  (103, 2)	5.550445827765052
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651342963736525
+  (103, 0)	-5.550447654578842
+  (104, 0)	5.550447654578842
+  (132, 0)	123.22987666487907
+  (133, 0)	123.22987666487907
+  (134, 0)	123.22987666487907
+  (162, 0)	1.0
+  (164, 0)	-16.651342963736525
+  (166, 0)	123.22987666487907
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201790618315368
+  (104, 1)	-22.201790618315368
+  (132, 1)	-246.45975332975814
+  (133, 1)	-246.45975332975814
+  (134, 1)	-246.45975332975814
+  (164, 1)	22.201790618315368
+  (166, 1)	-246.45975332975814
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550447654578842
+  (103, 2)	5.550447654578842
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651360386849426
+  (103, 0)	-5.550453462283142
+  (104, 0)	5.550453462283142
+  (132, 0)	123.23013454788365
+  (133, 0)	123.23013454788365
+  (134, 0)	123.23013454788365
+  (162, 0)	1.0
+  (164, 0)	-16.651360386849426
+  (166, 0)	123.23013454788365
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201813849132567
+  (104, 1)	-22.201813849132567
+  (132, 1)	-246.4602690957673
+  (133, 1)	-246.4602690957673
+  (134, 1)	-246.4602690957673
+  (164, 1)	22.201813849132567
+  (166, 1)	-246.4602690957673
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550453462283142
+  (103, 2)	5.550453462283142
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.65139907247783
+  (103, 0)	-5.55046635749261
+  (104, 0)	5.55046635749261
+  (132, 0)	123.23070714262911
+  (133, 0)	123.23070714262911
+  (134, 0)	123.23070714262911
+  (162, 0)	1.0
+  (164, 0)	-16.65139907247783
+  (166, 0)	123.23070714262911
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20186542997044
+  (104, 1)	-22.20186542997044
+  (132, 1)	-246.46141428525823
+  (133, 1)	-246.46141428525823
+  (134, 1)	-246.46141428525823
+  (164, 1)	22.20186542997044
+  (166, 1)	-246.46141428525823
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.55046635749261
+  (103, 2)	5.55046635749261
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651483790060503
+  (103, 0)	-5.550494596686834
+  (104, 0)	5.550494596686834
+  (132, 0)	123.23196107139896
+  (133, 0)	123.23196107139896
+  (134, 0)	123.23196107139896
+  (162, 0)	1.0
+  (164, 0)	-16.651483790060503
+  (166, 0)	123.23196107139896
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201978386747335
+  (104, 1)	-22.201978386747335
+  (132, 1)	-246.4639221427979
+  (133, 1)	-246.4639221427979
+  (134, 1)	-246.4639221427979
+  (164, 1)	22.201978386747335
+  (166, 1)	-246.4639221427979
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550494596686834
+  (103, 2)	5.550494596686834
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651614014470137
+  (103, 0)	-5.5505380048233794
+  (104, 0)	5.5505380048233794
+  (132, 0)	123.23388857195481
+  (133, 0)	123.23388857195481
+  (134, 0)	123.23388857195481
+  (162, 0)	1.0
+  (164, 0)	-16.651614014470137
+  (166, 0)	123.23388857195481
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.202152019293518
+  (104, 1)	-22.202152019293518
+  (132, 1)	-246.46777714390961
+  (133, 1)	-246.46777714390961
+  (134, 1)	-246.46777714390961
+  (164, 1)	22.202152019293518
+  (166, 1)	-246.46777714390961
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.5505380048233794
+  (103, 2)	5.5505380048233794
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651718324106213
+  (103, 0)	-5.550572774702071
+  (104, 0)	5.550572774702071
+  (132, 0)	123.2354325090554
+  (133, 0)	123.2354325090554
+  (134, 0)	123.2354325090554
+  (162, 0)	1.0
+  (164, 0)	-16.651718324106213
+  (166, 0)	123.2354325090554
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.202291098808285
+  (104, 1)	-22.202291098808285
+  (132, 1)	-246.4708650181108
+  (133, 1)	-246.4708650181108
+  (134, 1)	-246.4708650181108
+  (164, 1)	22.202291098808285
+  (166, 1)	-246.4708650181108
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550572774702071
+  (103, 2)	5.550572774702071
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651728151992618
+  (103, 0)	-5.550576050664206
+  (104, 0)	5.550576050664206
+  (132, 0)	123.2355779768282
+  (133, 0)	123.2355779768282
+  (134, 0)	123.2355779768282
+  (162, 0)	1.0
+  (164, 0)	-16.651728151992618
+  (166, 0)	123.2355779768282
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.202304202656823
+  (104, 1)	-22.202304202656823
+  (132, 1)	-246.4711559536564
+  (133, 1)	-246.4711559536564
+  (134, 1)	-246.4711559536564
+  (164, 1)	22.202304202656823
+  (166, 1)	-246.4711559536564
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550576050664206
+  (103, 2)	5.550576050664206
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651713258271656
+  (103, 0)	-5.550571086090552
+  (104, 0)	5.550571086090552
+  (132, 0)	123.23535752697781
+  (133, 0)	123.23535752697781
+  (134, 0)	123.23535752697781
+  (162, 0)	1.0
+  (164, 0)	-16.651713258271656
+  (166, 0)	123.23535752697781
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20228434436221
+  (104, 1)	-22.20228434436221
+  (132, 1)	-246.47071505395562
+  (133, 1)	-246.47071505395562
+  (134, 1)	-246.47071505395562
+  (164, 1)	22.20228434436221
+  (166, 1)	-246.47071505395562
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550571086090552
+  (103, 2)	5.550571086090552
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.65171037364667
+  (103, 0)	-5.55057012454889
+  (104, 0)	5.55057012454889
+  (132, 0)	123.23531483013872
+  (133, 0)	123.23531483013872
+  (134, 0)	123.23531483013872
+  (162, 0)	1.0
+  (164, 0)	-16.65171037364667
+  (166, 0)	123.23531483013872
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20228049819556
+  (104, 1)	-22.20228049819556
+  (132, 1)	-246.47062966027744
+  (133, 1)	-246.47062966027744
+  (134, 1)	-246.47062966027744
+  (164, 1)	22.20228049819556
+  (166, 1)	-246.47062966027744
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.55057012454889
+  (103, 2)	5.55057012454889
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+Optimization terminated successfully    (Exit mode 0)
+            Current function value: 18.016167304638333
+            Iterations: 24
+            Function evaluations: 24
+            Gradient evaluations: 24
+Optimization Complete
+-----------------------------------
+static_gravity = false, elapsed time = [1.80161673] (should be 1.80164719)
+/home/dingraha/projects/openmdao_jl_dev/ved/OpenMDAO/openmdao/utils/relevance.py:1234: OpenMDAOWarning:The top level group has a nonlinear solver that computes gradients, so the entire model will be included in the optimization iteration.
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	1.308096639801875
+  (72, 0)	1.84430711577758
+  (102, 0)	1.298183581557197
+  (103, 0)	1.5676360269173386
+  (104, 0)	1.9792824524507668
+  (132, 0)	1.996729174777387
+  (133, 0)	1.3859853078315325
+  (134, 0)	1.628503741282716
+  (162, 0)	1.1312386930596057
+  (164, 0)	1.6361967353888314
+  (166, 0)	1.134880090459015
+  (1, 1)	1.181883664777017
+  (73, 1)	1.6145452458231464
+  (102, 1)	1.1184812231420354
+  (104, 1)	1.794551802420121
+  (132, 1)	1.3302316293731962
+  (133, 1)	1.9787393934057875
+  (134, 1)	1.9130173169647113
+  (164, 1)	1.7410405761134973
+  (166, 1)	1.2619813617393825
+  (2, 2)	1.1353016228684967
+  (74, 2)	1.5288660801387801
+  (75, 2)	1.7167392698602506
+  (102, 2)	1.6672846952670581
+  (103, 2)	1.523384098571233
+  :	:
+  (809, 809)	1.38538014334405
+  (810, 810)	1.1433725398749857
+  (811, 811)	1.6598663471339927
+  (812, 812)	1.371300894303991
+  (813, 813)	1.1514190235659738
+  (814, 814)	1.059058040071673
+  (815, 815)	1.2422733252986307
+  (816, 816)	1.3960801493224027
+  (817, 817)	1.673280176966479
+  (818, 818)	1.3133529699950932
+  (819, 819)	1.5626214120073039
+  (820, 820)	1.7045078018263342
+  (821, 821)	1.3621334949989579
+  (822, 822)	1.2107755913606368
+  (823, 823)	1.7772524276424937
+  (824, 824)	1.110253833502278
+  (825, 825)	1.9320315477114645
+  (826, 826)	1.0588232315256096
+  (827, 827)	1.7478192726537476
+  (828, 828)	1.3345948953683733
+  (829, 829)	1.3203301904107505
+  (830, 830)	1.816897712820436
+  (831, 831)	1.6009836850870478
+  (832, 832)	1.0564172175274804
+  (833, 833)	1.7815663401674433
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	1.638721188582191
+  (72, 0)	1.775958145068109
+  (102, 0)	1.7864474386386044
+  (103, 0)	1.4962439173860171
+  (104, 0)	1.9933888451492998
+  (132, 0)	1.1413770280569875
+  (133, 0)	1.6939806133170645
+  (134, 0)	1.9959867546452705
+  (162, 0)	1.2724566273856461
+  (164, 0)	1.8359639015113571
+  (166, 0)	1.7834767847981898
+  (1, 1)	1.452655085124088
+  (73, 1)	1.0290356779787935
+  (102, 1)	1.255820291905719
+  (104, 1)	1.350474001722422
+  (132, 1)	1.245124013977117
+  (133, 1)	1.4235829715644799
+  (134, 1)	1.4683154526527904
+  (164, 1)	1.9770563673836925
+  (166, 1)	1.0712593497822613
+  (2, 2)	1.337403072219875
+  (74, 2)	1.9217160532852948
+  (75, 2)	1.81874912772614
+  (102, 2)	1.380632921434339
+  (103, 2)	1.8885204357766763
+  :	:
+  (809, 809)	1.6598475852568022
+  (810, 810)	1.4775772049724658
+  (811, 811)	1.0740878511743923
+  (812, 812)	1.7321236893480023
+  (813, 813)	1.5054532041399722
+  (814, 814)	1.7850040500812974
+  (815, 815)	1.2648497303690278
+  (816, 816)	1.5703268027918755
+  (817, 817)	1.2990912971876527
+  (818, 818)	1.8519074565389406
+  (819, 819)	1.984465578184269
+  (820, 820)	1.9834810490754227
+  (821, 821)	1.1208552695197072
+  (822, 822)	1.0767102654043523
+  (823, 823)	1.1276690254799129
+  (824, 824)	1.1798690193164907
+  (825, 825)	1.5028088842057823
+  (826, 826)	1.287233370454326
+  (827, 827)	1.0752978297172238
+  (828, 828)	1.2992342379749449
+  (829, 829)	1.9015804080213954
+  (830, 830)	1.2725671779815326
+  (831, 831)	1.11760022319209
+  (832, 832)	1.8447207395532148
+  (833, 833)	1.5491548040356737
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	1.5550871966430697
+  (72, 0)	1.8355875516306845
+  (102, 0)	1.4136385106688045
+  (103, 0)	1.8297412990733573
+  (104, 0)	1.987318426961778
+  (132, 0)	1.3354735603160026
+  (133, 0)	1.1324918599972356
+  (134, 0)	1.8485134193577784
+  (162, 0)	1.907608693504307
+  (164, 0)	1.8894434459889555
+  (166, 0)	1.8804414621174512
+  (1, 1)	1.0182037051702402
+  (73, 1)	1.3947901052411549
+  (102, 1)	1.5038971982209584
+  (104, 1)	1.4069285344576878
+  (132, 1)	1.886125952435083
+  (133, 1)	1.2282453642003723
+  (134, 1)	1.3720674232569359
+  (164, 1)	1.9653688625855903
+  (166, 1)	1.5243109136197133
+  (2, 2)	1.4127154505025863
+  (74, 2)	1.881709302912169
+  (75, 2)	1.1828553769803833
+  (102, 2)	1.779583366675737
+  (103, 2)	1.6440669644579762
+  :	:
+  (809, 809)	1.0152476786949636
+  (810, 810)	1.3268156874523136
+  (811, 811)	1.4815717520085854
+  (812, 812)	1.959883856347113
+  (813, 813)	1.9373912038757195
+  (814, 814)	1.3039804782036626
+  (815, 815)	1.4195435167870327
+  (816, 816)	1.0619796321716728
+  (817, 817)	1.2544756583859387
+  (818, 818)	1.4639481959759273
+  (819, 819)	1.724429103312151
+  (820, 820)	1.2352814919542605
+  (821, 821)	1.7948090243657946
+  (822, 822)	1.6214541071562287
+  (823, 823)	1.0474774946527279
+  (824, 824)	1.6205962308072337
+  (825, 825)	1.8665911006981646
+  (826, 826)	1.80088094535308
+  (827, 827)	1.4505629565945737
+  (828, 828)	1.0136654049248208
+  (829, 829)	1.346800319182138
+  (830, 830)	1.6447291726252242
+  (831, 831)	1.5956752741799456
+  (832, 832)	1.779387471760129
+  (833, 833)	1.8829399210933073
+
+Jacobian shape: (40, 50)  (13.40% nonzero)
+FWD solves: 8   REV solves: 0
+Total colors vs. total size: 8 vs 50  (84.00% improvement)
+
+Sparsity computed using tolerance: 1e-25.
+Dense total jacobian for Problem &#39;problem56&#39; was computed 3 times.
+Time to compute sparsity:   0.0209 sec
+Time to compute coloring:   0.0216 sec
+Coloring created on: 2025-12-01 09:20:50
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-15.000000000000004
+  (103, 0)	-5.000000000000001
+  (104, 0)	5.000000000000001
+  (132, 0)	100.00000000000004
+  (133, 0)	100.00000000000004
+  (134, 0)	100.00000000000004
+  (162, 0)	1.0
+  (164, 0)	-15.000000000000004
+  (166, 0)	100.00000000000004
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	20.000000000000004
+  (104, 1)	-20.000000000000004
+  (132, 1)	-200.00000000000009
+  (133, 1)	-200.00000000000009
+  (134, 1)	-200.00000000000009
+  (164, 1)	20.000000000000004
+  (166, 1)	-200.00000000000009
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.000000000000001
+  (103, 2)	5.000000000000001
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.91153336986935
+  (103, 0)	-5.63717778995645
+  (104, 0)	5.63717778995645
+  (132, 0)	127.11109374231314
+  (133, 0)	127.11109374231314
+  (134, 0)	127.11109374231314
+  (162, 0)	1.0
+  (164, 0)	-16.91153336986935
+  (166, 0)	127.11109374231314
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.5487111598258
+  (104, 1)	-22.5487111598258
+  (132, 1)	-254.2221874846263
+  (133, 1)	-254.2221874846263
+  (134, 1)	-254.2221874846263
+  (164, 1)	22.5487111598258
+  (166, 1)	-254.2221874846263
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.63717778995645
+  (103, 2)	5.63717778995645
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.631369205200123
+  (103, 0)	-5.543789735066707
+  (104, 0)	5.543789735066707
+  (132, 0)	122.93441850652397
+  (133, 0)	122.93441850652397
+  (134, 0)	122.93441850652397
+  (162, 0)	1.0
+  (164, 0)	-16.631369205200123
+  (166, 0)	122.93441850652397
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.17515894026683
+  (104, 1)	-22.17515894026683
+  (132, 1)	-245.86883701304794
+  (133, 1)	-245.86883701304794
+  (134, 1)	-245.86883701304794
+  (164, 1)	22.17515894026683
+  (166, 1)	-245.86883701304794
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.543789735066707
+  (103, 2)	5.543789735066707
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.633295862818
+  (103, 0)	-5.5444319542726666
+  (104, 0)	5.5444319542726666
+  (132, 0)	122.96290278223928
+  (133, 0)	122.96290278223928
+  (134, 0)	122.96290278223928
+  (162, 0)	1.0
+  (164, 0)	-16.633295862818
+  (166, 0)	122.96290278223928
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.177727817090666
+  (104, 1)	-22.177727817090666
+  (132, 1)	-245.92580556447857
+  (133, 1)	-245.92580556447857
+  (134, 1)	-245.92580556447857
+  (164, 1)	22.177727817090666
+  (166, 1)	-245.92580556447857
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.5444319542726666
+  (103, 2)	5.5444319542726666
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.633308510774597
+  (103, 0)	-5.544436170258199
+  (104, 0)	5.544436170258199
+  (132, 0)	122.96308978426961
+  (133, 0)	122.96308978426961
+  (134, 0)	122.96308978426961
+  (162, 0)	1.0
+  (164, 0)	-16.633308510774597
+  (166, 0)	122.96308978426961
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.177744681032795
+  (104, 1)	-22.177744681032795
+  (132, 1)	-245.92617956853923
+  (133, 1)	-245.92617956853923
+  (134, 1)	-245.92617956853923
+  (164, 1)	22.177744681032795
+  (166, 1)	-245.92617956853923
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.544436170258199
+  (103, 2)	5.544436170258199
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.633371358541954
+  (103, 0)	-5.544457119513985
+  (104, 0)	5.544457119513985
+  (132, 0)	122.96401900051725
+  (133, 0)	122.96401900051725
+  (134, 0)	122.96401900051725
+  (162, 0)	1.0
+  (164, 0)	-16.633371358541954
+  (166, 0)	122.96401900051725
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.17782847805594
+  (104, 1)	-22.17782847805594
+  (132, 1)	-245.9280380010345
+  (133, 1)	-245.9280380010345
+  (134, 1)	-245.9280380010345
+  (164, 1)	22.17782847805594
+  (166, 1)	-245.9280380010345
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.544457119513985
+  (103, 2)	5.544457119513985
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.63368444585292
+  (103, 0)	-5.544561481950973
+  (104, 0)	5.544561481950973
+  (132, 0)	122.9686481085375
+  (133, 0)	122.9686481085375
+  (134, 0)	122.9686481085375
+  (162, 0)	1.0
+  (164, 0)	-16.63368444585292
+  (166, 0)	122.9686481085375
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.178245927803893
+  (104, 1)	-22.178245927803893
+  (132, 1)	-245.937296217075
+  (133, 1)	-245.937296217075
+  (134, 1)	-245.937296217075
+  (164, 1)	22.178245927803893
+  (166, 1)	-245.937296217075
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.544561481950973
+  (103, 2)	5.544561481950973
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.635221313628506
+  (103, 0)	-5.545073771209502
+  (104, 0)	5.545073771209502
+  (132, 0)	122.99137251262228
+  (133, 0)	122.99137251262228
+  (134, 0)	122.99137251262228
+  (162, 0)	1.0
+  (164, 0)	-16.635221313628506
+  (166, 0)	122.99137251262228
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.180295084838008
+  (104, 1)	-22.180295084838008
+  (132, 1)	-245.98274502524455
+  (133, 1)	-245.98274502524455
+  (134, 1)	-245.98274502524455
+  (164, 1)	22.180295084838008
+  (166, 1)	-245.98274502524455
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.545073771209502
+  (103, 2)	5.545073771209502
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.642218008887976
+  (103, 0)	-5.547406002962659
+  (104, 0)	5.547406002962659
+  (132, 0)	123.09485344682459
+  (133, 0)	123.09485344682459
+  (134, 0)	123.09485344682459
+  (162, 0)	1.0
+  (164, 0)	-16.642218008887976
+  (166, 0)	123.09485344682459
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.189624011850636
+  (104, 1)	-22.189624011850636
+  (132, 1)	-246.18970689364917
+  (133, 1)	-246.18970689364917
+  (134, 1)	-246.18970689364917
+  (164, 1)	22.189624011850636
+  (166, 1)	-246.18970689364917
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.547406002962659
+  (103, 2)	5.547406002962659
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.66090555865676
+  (103, 0)	-5.55363518621892
+  (104, 0)	5.55363518621892
+  (132, 0)	123.37145512643544
+  (133, 0)	123.37145512643544
+  (134, 0)	123.37145512643544
+  (162, 0)	1.0
+  (164, 0)	-16.66090555865676
+  (166, 0)	123.37145512643544
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.21454074487568
+  (104, 1)	-22.21454074487568
+  (132, 1)	-246.74291025287087
+  (133, 1)	-246.74291025287087
+  (134, 1)	-246.74291025287087
+  (164, 1)	22.21454074487568
+  (166, 1)	-246.74291025287087
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.55363518621892
+  (103, 2)	5.55363518621892
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.65132871878236
+  (103, 0)	-5.550442906260787
+  (104, 0)	5.550442906260787
+  (132, 0)	123.22966582264276
+  (133, 0)	123.22966582264276
+  (134, 0)	123.22966582264276
+  (162, 0)	1.0
+  (164, 0)	-16.65132871878236
+  (166, 0)	123.22966582264276
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201771625043147
+  (104, 1)	-22.201771625043147
+  (132, 1)	-246.45933164528552
+  (133, 1)	-246.45933164528552
+  (134, 1)	-246.45933164528552
+  (164, 1)	22.201771625043147
+  (166, 1)	-246.45933164528552
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550442906260787
+  (103, 2)	5.550442906260787
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651337697386506
+  (103, 0)	-5.550445899128835
+  (104, 0)	5.550445899128835
+  (132, 0)	123.22979871662442
+  (133, 0)	123.22979871662442
+  (134, 0)	123.22979871662442
+  (162, 0)	1.0
+  (164, 0)	-16.651337697386506
+  (166, 0)	123.22979871662442
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20178359651534
+  (104, 1)	-22.20178359651534
+  (132, 1)	-246.45959743324883
+  (133, 1)	-246.45959743324883
+  (134, 1)	-246.45959743324883
+  (164, 1)	22.20178359651534
+  (166, 1)	-246.45959743324883
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550445899128835
+  (103, 2)	5.550445899128835
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651333213285405
+  (103, 0)	-5.550444404428468
+  (104, 0)	5.550444404428468
+  (132, 0)	123.22973234660518
+  (133, 0)	123.22973234660518
+  (134, 0)	123.22973234660518
+  (162, 0)	1.0
+  (164, 0)	-16.651333213285405
+  (166, 0)	123.22973234660518
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201777617713873
+  (104, 1)	-22.201777617713873
+  (132, 1)	-246.45946469321035
+  (133, 1)	-246.45946469321035
+  (134, 1)	-246.45946469321035
+  (164, 1)	22.201777617713873
+  (166, 1)	-246.45946469321035
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550444404428468
+  (103, 2)	5.550444404428468
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651334142004252
+  (103, 0)	-5.550444714001417
+  (104, 0)	5.550444714001417
+  (132, 0)	123.22974609274507
+  (133, 0)	123.22974609274507
+  (134, 0)	123.22974609274507
+  (162, 0)	1.0
+  (164, 0)	-16.651334142004252
+  (166, 0)	123.22974609274507
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201778856005667
+  (104, 1)	-22.201778856005667
+  (132, 1)	-246.45949218549015
+  (133, 1)	-246.45949218549015
+  (134, 1)	-246.45949218549015
+  (164, 1)	22.201778856005667
+  (166, 1)	-246.45949218549015
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550444714001417
+  (103, 2)	5.550444714001417
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651337483295155
+  (103, 0)	-5.550445827765052
+  (104, 0)	5.550445827765052
+  (132, 0)	123.22979554781789
+  (133, 0)	123.22979554781789
+  (134, 0)	123.22979554781789
+  (162, 0)	1.0
+  (164, 0)	-16.651337483295155
+  (166, 0)	123.22979554781789
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201783311060208
+  (104, 1)	-22.201783311060208
+  (132, 1)	-246.45959109563577
+  (133, 1)	-246.45959109563577
+  (134, 1)	-246.45959109563577
+  (164, 1)	22.201783311060208
+  (166, 1)	-246.45959109563577
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550445827765052
+  (103, 2)	5.550445827765052
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651342963736525
+  (103, 0)	-5.550447654578842
+  (104, 0)	5.550447654578842
+  (132, 0)	123.22987666487907
+  (133, 0)	123.22987666487907
+  (134, 0)	123.22987666487907
+  (162, 0)	1.0
+  (164, 0)	-16.651342963736525
+  (166, 0)	123.22987666487907
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201790618315368
+  (104, 1)	-22.201790618315368
+  (132, 1)	-246.45975332975814
+  (133, 1)	-246.45975332975814
+  (134, 1)	-246.45975332975814
+  (164, 1)	22.201790618315368
+  (166, 1)	-246.45975332975814
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550447654578842
+  (103, 2)	5.550447654578842
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651360386849426
+  (103, 0)	-5.550453462283142
+  (104, 0)	5.550453462283142
+  (132, 0)	123.23013454788365
+  (133, 0)	123.23013454788365
+  (134, 0)	123.23013454788365
+  (162, 0)	1.0
+  (164, 0)	-16.651360386849426
+  (166, 0)	123.23013454788365
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201813849132567
+  (104, 1)	-22.201813849132567
+  (132, 1)	-246.4602690957673
+  (133, 1)	-246.4602690957673
+  (134, 1)	-246.4602690957673
+  (164, 1)	22.201813849132567
+  (166, 1)	-246.4602690957673
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550453462283142
+  (103, 2)	5.550453462283142
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.65139907247783
+  (103, 0)	-5.55046635749261
+  (104, 0)	5.55046635749261
+  (132, 0)	123.23070714262911
+  (133, 0)	123.23070714262911
+  (134, 0)	123.23070714262911
+  (162, 0)	1.0
+  (164, 0)	-16.65139907247783
+  (166, 0)	123.23070714262911
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20186542997044
+  (104, 1)	-22.20186542997044
+  (132, 1)	-246.46141428525823
+  (133, 1)	-246.46141428525823
+  (134, 1)	-246.46141428525823
+  (164, 1)	22.20186542997044
+  (166, 1)	-246.46141428525823
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.55046635749261
+  (103, 2)	5.55046635749261
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651483790060503
+  (103, 0)	-5.550494596686834
+  (104, 0)	5.550494596686834
+  (132, 0)	123.23196107139896
+  (133, 0)	123.23196107139896
+  (134, 0)	123.23196107139896
+  (162, 0)	1.0
+  (164, 0)	-16.651483790060503
+  (166, 0)	123.23196107139896
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.201978386747335
+  (104, 1)	-22.201978386747335
+  (132, 1)	-246.4639221427979
+  (133, 1)	-246.4639221427979
+  (134, 1)	-246.4639221427979
+  (164, 1)	22.201978386747335
+  (166, 1)	-246.4639221427979
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550494596686834
+  (103, 2)	5.550494596686834
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651614014470137
+  (103, 0)	-5.5505380048233794
+  (104, 0)	5.5505380048233794
+  (132, 0)	123.23388857195481
+  (133, 0)	123.23388857195481
+  (134, 0)	123.23388857195481
+  (162, 0)	1.0
+  (164, 0)	-16.651614014470137
+  (166, 0)	123.23388857195481
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.202152019293518
+  (104, 1)	-22.202152019293518
+  (132, 1)	-246.46777714390961
+  (133, 1)	-246.46777714390961
+  (134, 1)	-246.46777714390961
+  (164, 1)	22.202152019293518
+  (166, 1)	-246.46777714390961
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.5505380048233794
+  (103, 2)	5.5505380048233794
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651718324106213
+  (103, 0)	-5.550572774702071
+  (104, 0)	5.550572774702071
+  (132, 0)	123.2354325090554
+  (133, 0)	123.2354325090554
+  (134, 0)	123.2354325090554
+  (162, 0)	1.0
+  (164, 0)	-16.651718324106213
+  (166, 0)	123.2354325090554
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.202291098808285
+  (104, 1)	-22.202291098808285
+  (132, 1)	-246.4708650181108
+  (133, 1)	-246.4708650181108
+  (134, 1)	-246.4708650181108
+  (164, 1)	22.202291098808285
+  (166, 1)	-246.4708650181108
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550572774702071
+  (103, 2)	5.550572774702071
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651728151992618
+  (103, 0)	-5.550576050664206
+  (104, 0)	5.550576050664206
+  (132, 0)	123.2355779768282
+  (133, 0)	123.2355779768282
+  (134, 0)	123.2355779768282
+  (162, 0)	1.0
+  (164, 0)	-16.651728151992618
+  (166, 0)	123.2355779768282
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.202304202656823
+  (104, 1)	-22.202304202656823
+  (132, 1)	-246.4711559536564
+  (133, 1)	-246.4711559536564
+  (134, 1)	-246.4711559536564
+  (164, 1)	22.202304202656823
+  (166, 1)	-246.4711559536564
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550576050664206
+  (103, 2)	5.550576050664206
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.651713258271656
+  (103, 0)	-5.550571086090552
+  (104, 0)	5.550571086090552
+  (132, 0)	123.23535752697781
+  (133, 0)	123.23535752697781
+  (134, 0)	123.23535752697781
+  (162, 0)	1.0
+  (164, 0)	-16.651713258271656
+  (166, 0)	123.23535752697781
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20228434436221
+  (104, 1)	-22.20228434436221
+  (132, 1)	-246.47071505395562
+  (133, 1)	-246.47071505395562
+  (134, 1)	-246.47071505395562
+  (164, 1)	22.20228434436221
+  (166, 1)	-246.47071505395562
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.550571086090552
+  (103, 2)	5.550571086090552
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+matrix = &lt;Compressed Sparse Column sparse matrix of dtype &#39;float64&#39;
+	with 2270 stored elements and shape (834, 834)&gt;
+  Coords	Values
+  (0, 0)	-1.0
+  (72, 0)	1.0
+  (102, 0)	-16.65171037364667
+  (103, 0)	-5.55057012454889
+  (104, 0)	5.55057012454889
+  (132, 0)	123.23531483013872
+  (133, 0)	123.23531483013872
+  (134, 0)	123.23531483013872
+  (162, 0)	1.0
+  (164, 0)	-16.65171037364667
+  (166, 0)	123.23531483013872
+  (1, 1)	-1.0
+  (73, 1)	1.0
+  (102, 1)	22.20228049819556
+  (104, 1)	-22.20228049819556
+  (132, 1)	-246.47062966027744
+  (133, 1)	-246.47062966027744
+  (134, 1)	-246.47062966027744
+  (164, 1)	22.20228049819556
+  (166, 1)	-246.47062966027744
+  (2, 2)	-1.0
+  (74, 2)	1.0
+  (75, 2)	1.0
+  (102, 2)	-5.55057012454889
+  (103, 2)	5.55057012454889
+  :	:
+  (809, 809)	-1.0
+  (810, 810)	-1.0
+  (811, 811)	-1.0
+  (812, 812)	-1.0
+  (813, 813)	-1.0
+  (814, 814)	-1.0
+  (815, 815)	-1.0
+  (816, 816)	-1.0
+  (817, 817)	-1.0
+  (818, 818)	-1.0
+  (819, 819)	-1.0
+  (820, 820)	-1.0
+  (821, 821)	-1.0
+  (822, 822)	-1.0
+  (823, 823)	-1.0
+  (824, 824)	-1.0
+  (825, 825)	-1.0
+  (826, 826)	-1.0
+  (827, 827)	-1.0
+  (828, 828)	-1.0
+  (829, 829)	-1.0
+  (830, 830)	-1.0
+  (831, 831)	-1.0
+  (832, 832)	-1.0
+  (833, 833)	-1.0
+Optimization terminated successfully    (Exit mode 0)
+            Current function value: 18.016167304638333
+            Iterations: 24
+            Function evaluations: 24
+            Gradient evaluations: 24
+Optimization Complete
+-----------------------------------
+static_gravity = true, elapsed time = [1.80161673] (should be 1.80164719)</code></pre><p>At the end we see we got pretty much the same answer for the elapsed time as the Python example in the Dymos docs. (But not exactly the same, which is a bummer...)</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../shape_by_conn/">« Variable Shapes at Runtime</a><a class="docs-footer-nextpage" href="../auto_dense_ad/">Auto-Dense Examples »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Monday 1 December 2025 09:20">Monday 1 December 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
