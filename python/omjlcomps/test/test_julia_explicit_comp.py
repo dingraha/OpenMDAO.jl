@@ -505,6 +505,5 @@ class TestJuliaMatrixFreeScalarExplicitComp(unittest.TestCase):
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_rev'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
 
 
-
 if __name__ == '__main__':
     unittest.main()

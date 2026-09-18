@@ -123,7 +123,7 @@ class JuliaExplicitComp(om.ExplicitComponent):
                     of_rel, wrt_rel = abs_key2rel_key(self, abs_key)
                     if of_rel != wrt_rel:
                         subjac = partials[of_rel, wrt_rel]
-                        print(f"DJI: subjac = {subjac}, type(subjac) = {type(subjac)}")
+                        # print(f"DJI: subjac = {subjac}, type(subjac) = {type(subjac)}")
                         # partials_dict[of_rel, wrt_rel] = np.atleast_1d(subjac)
                         partials_dict[of_rel, wrt_rel] = subjac
                 partials_dict = juliacall.convert(jl.Dict, partials_dict)
@@ -245,8 +245,10 @@ class JuliaImplicitComp(om.ImplicitComponent):
 
         if jl.OpenMDAOCore.has_solve_nonlinear(self._jlcomp):
             def solve_nonlinear(self, inputs, outputs):
-                inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
-                outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
+                # inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
+                # outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
+                inputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in inputs.items()})
+                outputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in outputs.items()})
 
                 try:
                     jl.OpenMDAOCore.solve_nonlinear_b(self._jlcomp, inputs_dict, outputs_dict)
@@ -262,7 +264,8 @@ class JuliaImplicitComp(om.ImplicitComponent):
                 # Handle scalar entries in outputs, which aren't passed by reference when constructing outputs_dict.
                 for k in list(outputs.keys()):
                     if not isinstance(outputs[k], np.ndarray):
-                        outputs[k] = _only(outputs_dict[k])
+                        # outputs[k] = _only(outputs_dict[k])
+                        outputs[k] = outputs_dict[k]
 
             self.override_method("solve_nonlinear", solve_nonlinear)
 
@@ -272,10 +275,16 @@ class JuliaImplicitComp(om.ImplicitComponent):
                 outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
 
                 partials_dict = {}
-                for (of_abs, wrt_abs), subjac in partials.items():
-                    of_rel = of_abs.split(".")[-1]
-                    wrt_rel = wrt_abs.split(".")[-1]
-                    partials_dict[of_rel, wrt_rel] = np.atleast_1d(subjac)
+                # for (of_abs, wrt_abs), subjac in partials.items():
+                #     of_rel = of_abs.split(".")[-1]
+                #     wrt_rel = wrt_abs.split(".")[-1]
+                #     partials_dict[of_rel, wrt_rel] = np.atleast_1d(subjac)
+                for abs_key in self._subjacs_info:
+                    of_rel, wrt_rel = abs_key2rel_key(self, abs_key)
+                    subjac = partials[of_rel, wrt_rel]
+                    # print(f"DJI: subjac = {subjac}, type(subjac) = {type(subjac)}")
+                    # partials_dict[of_rel, wrt_rel] = np.atleast_1d(subjac)
+                    partials_dict[of_rel, wrt_rel] = subjac
                 partials_dict = juliacall.convert(jl.Dict, partials_dict)
 
                 try:
@@ -290,22 +299,33 @@ class JuliaImplicitComp(om.ImplicitComponent):
                         raise e from None
 
                 # Handle scalar entries in partials, which aren't passed by reference when constructing partials_dict.
-                for (of_abs, wrt_abs) in list(partials.keys()):
-                    subjac = partials[of_abs, wrt_abs]
+                # for (of_abs, wrt_abs) in list(partials.keys()):
+                #     subjac = partials[of_abs, wrt_abs]
+                #     if not isinstance(subjac, np.ndarray):
+                #         of_rel = of_abs.split(".")[-1]
+                #         wrt_rel = wrt_abs.split(".")[-1]
+                #         partials[of_obs, wrt_abs] = _only(partials_dict[of_rel, wrt_rel])
+                for abs_key in self._subjacs_info:
+                    of_rel, wrt_rel = abs_key2rel_key(self, abs_key)
+                    subjac = partials[of_rel, wrt_rel]
                     if not isinstance(subjac, np.ndarray):
-                        of_rel = of_abs.split(".")[-1]
-                        wrt_rel = wrt_abs.split(".")[-1]
-                        partials[of_obs, wrt_abs] = _only(partials_dict[of_rel, wrt_rel])
+                        # partials[of_rel, wrt_rel] = _only(partials_dict[of_rel, wrt_rel])
+                        partials[of_rel, wrt_rel] = partials_dict[of_rel, wrt_rel]
 
             self.override_method("linearize", linearize)
 
         if jl.OpenMDAOCore.has_apply_linear(self._jlcomp):
             def apply_linear(self, inputs, outputs, d_inputs, d_outputs, d_residuals, mode):
-                inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
-                outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
-                d_inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_inputs.items()})
-                d_outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_outputs.items()})
-                d_residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_residuals.items()})
+                # inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
+                # outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
+                # d_inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_inputs.items()})
+                # d_outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_outputs.items()})
+                # d_residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_residuals.items()})
+                inputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in inputs.items()})
+                outputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in outputs.items()})
+                d_inputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in d_inputs.items()})
+                d_outputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in d_outputs.items()})
+                d_residuals_dict = juliacall.convert(jl.Dict, {k: v for k, v in d_residuals.items()})
 
                 try:
                     jl.OpenMDAOCore.apply_linear_b(self._jlcomp, inputs_dict, outputs_dict,
@@ -323,16 +343,19 @@ class JuliaImplicitComp(om.ImplicitComponent):
                     # Handle scalar entries in d_residuals, which aren't passed by reference when constructing d_residuals_dict.
                     for k in list(d_residuals.keys()):
                         if not isinstance(d_residuals[k], np.ndarray):
-                            d_residuals[k] = _only(d_residuals_dict[k])
+                            # d_residuals[k] = _only(d_residuals_dict[k])
+                            d_residuals[k] = d_residuals_dict[k]
                 elif mode == "rev":
                     # Handle scalar entries in d_inputs, which aren't passed by reference when constructing d_inputs_dict.
                     for k in list(d_inputs.keys()):
                         if not isinstance(d_inputs[k], np.ndarray):
-                            d_inputs[k] = _only(d_inputs_dict[k])
+                            # d_inputs[k] = _only(d_inputs_dict[k])
+                            d_inputs[k] = d_inputs_dict[k]
                     # Handle scalar entries in d_outputs, which aren't passed by reference when constructing d_outputs_dict.
                     for k in list(d_outputs.keys()):
                         if not isinstance(d_outputs[k], np.ndarray):
-                            d_outputs[k] = _only(d_outputs_dict[k])
+                            # d_outputs[k] = _only(d_outputs_dict[k])
+                            d_outputs[k] = d_outputs_dict[k]
                 else:
                     raise ValueError(f"unknown mode = {mode} in {self}.apply_linear")
 
@@ -340,8 +363,10 @@ class JuliaImplicitComp(om.ImplicitComponent):
 
         if jl.OpenMDAOCore.has_solve_linear(self._jlcomp):
             def solve_linear(self, d_outputs, d_residuals, mode):
-                d_outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_outputs.items()})
-                d_residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_residuals.items()})
+                # d_outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_outputs.items()})
+                # d_residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in d_residuals.items()})
+                d_outputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in d_outputs.items()})
+                d_residuals_dict = juliacall.convert(jl.Dict, {k: v for k, v in d_residuals.items()})
 
                 try:
                     jl.OpenMDAOCore.solve_linear_b(self._jlcomp, d_outputs_dict, d_residuals_dict, mode)
@@ -358,12 +383,14 @@ class JuliaImplicitComp(om.ImplicitComponent):
                     # Handle scalar entries in d_outputs, which aren't passed by reference when constructing d_outputs_dict.
                     for k in list(d_outputs.keys()):
                         if not isinstance(d_outputs[k], np.ndarray):
-                            d_outputs[k] = _only(d_outputs_dict[k])
+                            # d_outputs[k] = _only(d_outputs_dict[k])
+                            d_outputs[k] = d_outputs_dict[k]
                 elif mode == "rev":
                     # Handle scalar entries in d_residuals, which aren't passed by reference when constructing d_residuals_dict.
                     for k in list(d_residuals.keys()):
                         if not isinstance(d_residuals[k], np.ndarray):
-                            d_residuals[k] = _only(d_residuals_dict[k])
+                            # d_residuals[k] = _only(d_residuals_dict[k])
+                            d_residuals[k] = d_residuals_dict[k]
                 else:
                     raise ValueError(f"unknown mode = {mode} in {self}.solve_linear")
 
@@ -377,9 +404,12 @@ class JuliaImplicitComp(om.ImplicitComponent):
 
         if jl.OpenMDAOCore.has_guess_nonlinear(self._jlcomp):
             def guess_nonlinear(self, inputs, outputs, residuals):
-                inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
-                outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
-                residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in residuals.items()})
+                # inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
+                # outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
+                # residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in residuals.items()})
+                inputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in inputs.items()})
+                outputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in outputs.items()})
+                residuals_dict = juliacall.convert(jl.Dict, {k: v for k, v in residuals.items()})
 
                 try:
                     jl.OpenMDAOCore.guess_nonlinear_b(self._jlcomp, inputs_dict, outputs_dict, residuals_dict)
@@ -395,14 +425,18 @@ class JuliaImplicitComp(om.ImplicitComponent):
                 # Handle scalar entries in outputs, which aren't passed by reference when constructing outputs_dict.
                 for k in list(outputs.keys()):
                     if not isinstance(outputs[k], np.ndarray):
-                        outputs[k] = _only(outputs_dict[k])
+                        # outputs[k] = _only(outputs_dict[k])
+                        outputs[k] = outputs_dict[k]
 
             self.override_method("guess_nonlinear", guess_nonlinear)
 
     def apply_nonlinear(self, inputs, outputs, residuals):
-        inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
-        outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
-        residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in residuals.items()})
+        # inputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in inputs.items()})
+        # outputs_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in outputs.items()})
+        # residuals_dict = juliacall.convert(jl.Dict, {k: np.atleast_1d(v) for k, v in residuals.items()})
+        inputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in inputs.items()})
+        outputs_dict = juliacall.convert(jl.Dict, {k: v for k, v in outputs.items()})
+        residuals_dict = juliacall.convert(jl.Dict, {k: v for k, v in residuals.items()})
 
         try:
             jl.OpenMDAOCore.apply_nonlinear_b(self._jlcomp, inputs_dict, outputs_dict, residuals_dict)
@@ -418,7 +452,8 @@ class JuliaImplicitComp(om.ImplicitComponent):
         # Handle scalar entries in residuals, which aren't passed by reference when constructing residuals_dict.
         for k in list(residuals.keys()):
             if not isinstance(residuals[k], np.ndarray):
-                residuals[k] = _only(residuals_dict[k])
+                # residuals[k] = _only(residuals_dict[k])
+                residuals[k] = residuals_dict[k]
 
 
 def to_jlsymstrdict(d):

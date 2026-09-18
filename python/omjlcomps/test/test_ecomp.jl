@@ -168,7 +168,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFree, inputs, d_i
         # derivatives of this components outputs wrt the upstream inputs given
         # the derivatives of inputs wrt the upstream inputs.
         if y1dot !== nothing
-            fill!(y1dot, 0)
+            # fill!(y1dot, 0)
             if x1dot !== nothing
                 @. y1dot += 2*x1dot
             end
@@ -177,7 +177,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFree, inputs, d_i
             end
         end
         if y2dot !== nothing
-            fill!(y2dot, 0)
+            # fill!(y2dot, 0)
             if x1dot !== nothing
                 @. y2dot += 12*x1^2*x1dot
             end
@@ -198,7 +198,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFree, inputs, d_i
         # Hmm...
         # f(y1(x1,x2), y2(x1, x2)) = df/dy1*(dy1/dx1 + dy1/dx2) + df/dy2*(dy2/dx1 + dy2/dx2)
         if x1dot !== nothing
-            fill!(x1dot, 0)
+            # fill!(x1dot, 0)
             if y1dot !== nothing
                 @. x1dot += y1dot*2
             end
@@ -207,7 +207,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFree, inputs, d_i
             end
         end
         if x2dot !== nothing
-            fill!(x2dot, 0)
+            # fill!(x2dot, 0)
             if y1dot !== nothing
                 @. x2dot += y1dot*(6*x2)
             end
@@ -295,14 +295,14 @@ function OpenMDAOCore.setup(self::ECompSimpleWithScalars)
 end
 
 function OpenMDAOCore.compute!(self::ECompSimpleWithScalars, inputs, outputs)
-    @show typeof(inputs["x"])
+    # @show typeof(inputs["x"])
     outputs["y"] = 2*inputs["x"]^2 + 1
     return nothing
 end
 
 function OpenMDAOCore.compute_partials!(self::ECompSimpleWithScalars, inputs, partials)
-    @show typeof(inputs["x"])
-    @show inputs["x"] partials["y", "x"]
+    # @show typeof(inputs["x"])
+    # @show inputs["x"] partials["y", "x"]
     # Apparently subjacobians are always 2D.
     partials["y", "x"] .= 4*inputs["x"]
     return nothing
@@ -343,7 +343,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFreeScalar, input
                 x2dot = d_inputs["x2"]
                 y1dot += 6*x2*x2dot
             end
-            d_outputs["y1"] = y1dot
+            d_outputs["y1"] += y1dot
         end
         if "y2" in keys(d_outputs)
             y2dot = zero(typeof(d_outputs["y2"]))
@@ -355,7 +355,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFreeScalar, input
                 x2dot = d_inputs["x2"]
                 y2dot += 20*x2^3*x2dot
             end
-            d_outputs["y2"] = y2dot
+            d_outputs["y2"] += y2dot
         end
     elseif mode == "rev"
         # For reverse mode, we are tracking the derivatives of everything with
@@ -379,7 +379,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFreeScalar, input
                 y2dot = d_outputs["y2"]
                 x1dot += y2dot*(12*x1^2)
             end
-            d_inputs["x1"] = x1dot
+            d_inputs["x1"] += x1dot
         end
         if "x2" in keys(d_inputs)
             x2dot = zero(typeof(d_inputs["x2"]))
@@ -391,7 +391,7 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFreeScalar, input
                 y2dot = d_outputs["y2"]
                 x2dot += y2dot*(20*x2^3)
             end
-            d_inputs["x2"] = x2dot
+            d_inputs["x2"] += x2dot
         end
     end
     return nothing
