@@ -492,7 +492,6 @@ class TestJuliaMatrixFreeScalarExplicitComp(unittest.TestCase):
         # Check that partials approximated by the complex-step method match the user-provided partials.
         for comp in cpd:
             for (var, wrt) in cpd[comp]:
-                print(var, wrt)
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_fwd'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_rev'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
 
@@ -503,6 +502,34 @@ class TestJuliaMatrixFreeScalarExplicitComp(unittest.TestCase):
             for (var, wrt) in cpd[comp]:
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_fwd'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_rev'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
+
+
+class TestJuliaParaboloidRelevance(unittest.TestCase):
+
+    def test_relevance(self):
+        prob = om.Problem()
+
+        comp = JuliaExplicitComp(jlcomp=jl.ECompTest.ParaboloidComp())
+        prob.model.add_subsystem('paraboloid', comp)
+
+        prob.driver = om.ScipyOptimizeDriver()
+        prob.driver.options['optimizer'] = 'SLSQP'
+
+        prob.model.add_design_var('paraboloid.x', lower=-50, upper=50)
+        prob.model.add_objective('paraboloid.f')
+
+        prob.setup()
+
+        prob.set_val('paraboloid.x', 3.0)
+        prob.set_val('paraboloid.y', 8.0)
+
+        # run the optimization
+        prob.run_driver()
+
+        # minimum value
+        np.testing.assert_allclose(prob.get_val('paraboloid.x'), -1.0)
+        np.testing.assert_allclose(prob.get_val('paraboloid.y'), 8.0)
+        np.testing.assert_allclose(prob.get_val('paraboloid.f'), 149.0)
 
 
 if __name__ == '__main__':

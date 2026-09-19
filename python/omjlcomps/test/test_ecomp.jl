@@ -295,14 +295,11 @@ function OpenMDAOCore.setup(self::ECompSimpleWithScalars)
 end
 
 function OpenMDAOCore.compute!(self::ECompSimpleWithScalars, inputs, outputs)
-    # @show typeof(inputs["x"])
     outputs["y"] = 2*inputs["x"]^2 + 1
     return nothing
 end
 
 function OpenMDAOCore.compute_partials!(self::ECompSimpleWithScalars, inputs, partials)
-    # @show typeof(inputs["x"])
-    # @show inputs["x"] partials["y", "x"]
     # Apparently subjacobians are always 2D.
     partials["y", "x"] .= 4*inputs["x"]
     return nothing
@@ -394,6 +391,29 @@ function OpenMDAOCore.compute_jacvec_product!(self::ECompMatrixFreeScalar, input
             d_inputs["x2"] += x2dot
         end
     end
+    return nothing
+end
+
+struct ParaboloidComp <: OpenMDAOCore.AbstractExplicitComp end
+
+function OpenMDAOCore.setup(self::ParaboloidComp)
+    input_data = [VarData("x"; shape=()), VarData("y"; shape=())]
+    output_data = [VarData("f"; shape=())]
+    partials_data = [PartialsData("*", "*")]
+
+    return input_data, output_data, partials_data
+end
+
+function OpenMDAOCore.compute!(self::ParaboloidComp, inputs, outputs)
+    outputs["f"] = (inputs["x"]-3)^2 + inputs["x"]*inputs["y"] + (inputs["y"]+4)^2 - 3
+    return nothing
+end
+
+function OpenMDAOCore.compute_partials!(self::ParaboloidComp, inputs, partials)
+    x = inputs["x"]
+    y = inputs["y"]
+    @. partials["f", "x"] = 2*(x - 3) + y
+    @. partials["f", "y"] = x + 2*(y + 4)
     return nothing
 end
 

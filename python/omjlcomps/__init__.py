@@ -30,7 +30,6 @@ def _setup_common(self):
             shape = None
         else:
             shape = var.shape
-        # print(f"DJI: var = {var}, shape = {shape}")
         self.add_input(var.name, shape=shape, val=var.val,
                        units=var.units, tags=tags, shape_by_conn=var.shape_by_conn,
                        copy_shape=var.copy_shape)
@@ -44,14 +43,12 @@ def _setup_common(self):
             shape = None
         else:
             shape = var.shape
-        # print(f"DJI: var = {var}, shape = {shape}")
         self.add_output(var.name, shape=shape, val=var.val,
                         units=var.units, lower=var.lower, upper=var.upper, tags=tags,
                         shape_by_conn=var.shape_by_conn,
                         copy_shape=var.copy_shape)
 
     for data in partials_data:
-        # print(f"DJI: data.of = {data.of}, data.wrt = {data.wrt}, data.rows = {data.rows}, data.cols = {data.cols}, data.val = {data.val}")
         self.declare_partials(data.of, data.wrt,
                               rows=data.rows, cols=data.cols,
                               val=data.val, method=data.method)
@@ -123,7 +120,6 @@ class JuliaExplicitComp(om.ExplicitComponent):
                     of_rel, wrt_rel = abs_key2rel_key(self, abs_key)
                     if of_rel != wrt_rel:
                         subjac = partials[of_rel, wrt_rel]
-                        # print(f"DJI: subjac = {subjac}, type(subjac) = {type(subjac)}")
                         # partials_dict[of_rel, wrt_rel] = np.atleast_1d(subjac)
                         partials_dict[of_rel, wrt_rel] = subjac
                 partials_dict = juliacall.convert(jl.Dict, partials_dict)
@@ -282,8 +278,6 @@ class JuliaImplicitComp(om.ImplicitComponent):
                 for abs_key in self._subjacs_info:
                     of_rel, wrt_rel = abs_key2rel_key(self, abs_key)
                     subjac = partials[of_rel, wrt_rel]
-                    # print(f"DJI: subjac = {subjac}, type(subjac) = {type(subjac)}")
-                    # partials_dict[of_rel, wrt_rel] = np.atleast_1d(subjac)
                     partials_dict[of_rel, wrt_rel] = subjac
                 partials_dict = juliacall.convert(jl.Dict, partials_dict)
 
@@ -389,7 +383,6 @@ class JuliaImplicitComp(om.ImplicitComponent):
                     # Handle scalar entries in d_residuals, which aren't passed by reference when constructing d_residuals_dict.
                     for k in list(d_residuals.keys()):
                         if not isinstance(d_residuals[k], np.ndarray):
-                            # d_residuals[k] = _only(d_residuals_dict[k])
                             d_residuals[k] = d_residuals_dict[k]
                 else:
                     raise ValueError(f"unknown mode = {mode} in {self}.solve_linear")
