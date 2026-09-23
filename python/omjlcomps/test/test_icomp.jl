@@ -869,4 +869,28 @@ function OpenMDAOCore.solve_linear!(self::SolveLinearImplicitScalar, d_outputs, 
     return nothing
 end
 
+struct ImplicitParaboloidComp <: OpenMDAOCore.AbstractImplicitComp end
+
+function OpenMDAOCore.setup(self::ImplicitParaboloidComp)
+    input_data = [VarData("x"; shape=()), VarData("y"; shape=())]
+    output_data = [VarData("f"; shape=())]
+    partials_data = [PartialsData("*", "*")]
+
+    return input_data, output_data, partials_data
+end
+
+function OpenMDAOCore.apply_nonlinear!(self::ImplicitParaboloidComp, inputs, outputs, residuals)
+    residuals["f"] = (inputs["x"]-3)^2 + inputs["x"]*inputs["y"] + (inputs["y"]+4)^2 - 3 - outputs["f"]
+    return nothing
+end
+
+function OpenMDAOCore.linearize!(self::ImplicitParaboloidComp, inputs, outputs, partials)
+    x = inputs["x"]
+    y = inputs["y"]
+    @. partials["f", "x"] = 2*(x - 3) + y
+    @. partials["f", "y"] = x + 2*(y + 4)
+    @. partials["f", "f"] = -1
+    return nothing
+end
+
 end # module
