@@ -16,9 +16,6 @@ dependencies = [
     "juliacall~=0.9.13",
 ]
 
-[project.optional-dependencies]
-test = ["aviary"]
-
 [project.entry-points.openmdao_component]
 juliaexplicitcomp = "omjlcomps:JuliaExplicitComp"
 juliaimplicitcomp = "omjlcomps:JuliaImplicitComp"

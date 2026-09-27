@@ -11,6 +11,7 @@ import numpy as np
 import openmdao.api as om
 from openmdao.utils.assert_utils import assert_near_equal
 from openmdao.core.analysis_error import AnalysisError
+from openmdao.utils.testing_utils import use_tempdirs
 
 from omjlcomps import JuliaImplicitComp
 
@@ -18,6 +19,7 @@ d = os.path.dirname(os.path.abspath(__file__))
 jl.include(os.path.join(d, "test_icomp.jl"))
 
 
+@use_tempdirs
 class TestSimpleJuliaImplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -95,6 +97,7 @@ class TestSimpleJuliaImplicitComp(unittest.TestCase):
                                                    decimal=12)
 
 
+@use_tempdirs
 class TestSimpleJuliaImplicitWithGlobComp(unittest.TestCase):
 
     def setUp(self):
@@ -168,6 +171,7 @@ class TestSimpleJuliaImplicitWithGlobComp(unittest.TestCase):
 
 
 
+@use_tempdirs
 class TestSolveNonlinearJuliaImplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -244,6 +248,7 @@ class TestSolveNonlinearJuliaImplicitComp(unittest.TestCase):
                                                    decimal=12)
 
 
+@use_tempdirs
 class TestMatrixFreeImplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -319,6 +324,7 @@ class TestMatrixFreeImplicitComp(unittest.TestCase):
                                                decimal=12)
 
 
+@use_tempdirs
 class TestSolveLinearImplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -423,6 +429,7 @@ class TestSolveLinearImplicitComp(unittest.TestCase):
 
 
 
+@use_tempdirs
 class TestGuessNonlinearImplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -485,6 +492,7 @@ class TestGuessNonlinearImplicitComp(unittest.TestCase):
                                                    decimal=12)
 
 
+@use_tempdirs
 class TestShapeByConn(unittest.TestCase):
 
     def setUp(self):
@@ -566,6 +574,7 @@ class TestShapeByConn(unittest.TestCase):
                                                        decimal=12)
 
 
+@use_tempdirs
 class TestAnalysisError(unittest.TestCase):
 
     def setUp(self):
@@ -649,6 +658,7 @@ class TestAnalysisError(unittest.TestCase):
         self.assertRaises(AnalysisError, p.check_partials)
 
 
+@use_tempdirs
 class TestSimpleJuliaImplicitWithScalarsComp(unittest.TestCase):
 
     def setUp(self):
@@ -719,6 +729,7 @@ class TestSimpleJuliaImplicitWithScalarsComp(unittest.TestCase):
                                                    decimal=12)
 
 
+@use_tempdirs
 class TestMatrixFreeImplicitScalarComp(unittest.TestCase):
 
     def setUp(self):
@@ -787,6 +798,7 @@ class TestMatrixFreeImplicitScalarComp(unittest.TestCase):
                                                decimal=12)
 
 
+@use_tempdirs
 class TestSolveLinearImplicitScalarComp(unittest.TestCase):
 
     def setUp(self):
@@ -883,6 +895,7 @@ class TestSolveLinearImplicitScalarComp(unittest.TestCase):
                                                decimal=12)
 
 
+@use_tempdirs
 class TestJuliaParaboloidImplicitRelevance(unittest.TestCase):
 
     def test_relevance(self):

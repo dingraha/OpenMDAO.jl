@@ -12,6 +12,7 @@ import numpy as np
 import openmdao.api as om
 from openmdao.utils.assert_utils import assert_near_equal
 from openmdao.core.analysis_error import AnalysisError
+from openmdao.utils.testing_utils import use_tempdirs
 
 
 from omjlcomps import JuliaExplicitComp
@@ -20,6 +21,7 @@ d = os.path.dirname(os.path.abspath(__file__))
 jl.include(os.path.join(d, "test_ecomp.jl"))
 
 
+@use_tempdirs
 class TestSimpleJuliaExplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -53,6 +55,7 @@ class TestSimpleJuliaExplicitComp(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=12)
 
+@use_tempdirs
 class TestSimpleJuliaExplicitCompWithRecording(unittest.TestCase):
 
     def setUp(self):
@@ -96,6 +99,7 @@ class TestSimpleJuliaExplicitCompWithRecording(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=12)
 
+@use_tempdirs
 class TestSimpleJuliaExplicitCSComp(unittest.TestCase):
 
     def setUp(self):
@@ -129,6 +133,7 @@ class TestSimpleJuliaExplicitCSComp(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=5)
 
+@use_tempdirs
 class TestJuliaExplicitCompWithOption(unittest.TestCase):
 
     def setUp(self):
@@ -163,6 +168,7 @@ class TestJuliaExplicitCompWithOption(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=12)
 
+@use_tempdirs
 class TestJuliaExplicitCompWithOptionAndTags(unittest.TestCase):
 
     def setUp(self):
@@ -197,6 +203,7 @@ class TestJuliaExplicitCompWithOptionAndTags(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=12)
 
+@use_tempdirs
 class TestJuliaExplicitCompWithGlobs(unittest.TestCase):
 
     def setUp(self):
@@ -231,6 +238,7 @@ class TestJuliaExplicitCompWithGlobs(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=12)
 
+@use_tempdirs
 class TestJuliaExplicitCompWithLargeOption(unittest.TestCase):
 
     def setUp(self):
@@ -306,6 +314,7 @@ class TestJuliaExplicitCompWithLargeOption(unittest.TestCase):
         np.testing.assert_allclose(time_avg[1]/time_avg[0], 1.0, atol=atol)
 
 
+@use_tempdirs
 class TestJuliaMatrixFreeExplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -352,6 +361,7 @@ class TestJuliaMatrixFreeExplicitComp(unittest.TestCase):
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_rev'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
 
 
+@use_tempdirs
 class TestShapeByConn(unittest.TestCase):
     def setUp(self):
         p = self.p = om.Problem()
@@ -384,6 +394,7 @@ class TestShapeByConn(unittest.TestCase):
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_fwd'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
 
 
+@use_tempdirs
 class TestAnalysisError(unittest.TestCase):
 
     def setUp(self):
@@ -426,6 +437,7 @@ class TestAnalysisError(unittest.TestCase):
         self.assertRaises(AnalysisError, p.check_partials)
 
 
+@use_tempdirs
 class TestSimpleWithScalarsJuliaExplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -461,6 +473,7 @@ class TestSimpleWithScalarsJuliaExplicitComp(unittest.TestCase):
                                                desired=cpd[comp][var, wrt]['J_fd'],
                                                decimal=12)
 
+@use_tempdirs
 class TestJuliaMatrixFreeScalarExplicitComp(unittest.TestCase):
 
     def setUp(self):
@@ -504,6 +517,7 @@ class TestJuliaMatrixFreeScalarExplicitComp(unittest.TestCase):
                 np.testing.assert_allclose(actual=cpd[comp][var, wrt]['J_rev'], desired=cpd[comp][var, wrt]['J_fd'], rtol=1e-12)
 
 
+@use_tempdirs
 class TestJuliaParaboloidRelevance(unittest.TestCase):
 
     def test_relevance(self):
