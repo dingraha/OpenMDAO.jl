@@ -543,13 +543,13 @@ function OpenMDAOCore.compute_jacvec_product!(self::MatrixFreeADExplicitComp, in
         if prep isa DifferentiationInterface.PushforwardPrep
             _compute_pushforward!(self, inputs, d_inputs, d_outputs)
         else
-            @warn "mode = \"fwd\" not supported for AD backend $(backend), preparation $(prep), derivatives for $(self) will be incorrect"
+            @warn "mode = \"fwd\" not supported for AD backend $(backend), preparation $(nameof(typeof(prep))), derivatives for $(nameof(typeof(self))) will be incorrect"
         end
     elseif mode == "rev"
         if prep isa DifferentiationInterface.PullbackPrep
             _compute_pullback!(self, inputs, d_inputs, d_outputs)
         else
-            @warn "mode = \"rev\" not supported for AD backend $(backend), preparation $(prep), derivatives for $(self) will be incorrect"
+            @warn "mode = \"rev\" not supported for AD backend $(backend), preparation $(nameof(typeof(prep))), derivatives for $(nameof(typeof(self))) will be incorrect"
         end
     else
         throw(ArgumentError("unknown mode = \"$(mode)\""))

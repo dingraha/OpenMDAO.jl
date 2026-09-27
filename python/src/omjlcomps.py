@@ -394,9 +394,14 @@ def to_jlsymstrdict(d):
     T = juliacall.Main.Dict[juliacall.Main.Symbol,juliacall.Main.String]
     return juliacall.convert(T, d)
 
-def to_jlsymdictstranydict(d):
-    T = juliacall.Main.Dict[
-            juliacall.Main.Symbol,
-            juliacall.Main.Dict[
-                juliacall.Main.String, juliacall.Main.Any]]
-    return juliacall.convert(T, d)
+# `to_jlsymdictstranydict` was previously used by the Aviary support tests to
+# convert a Python dict into a Julia `Dict{Symbol, Dict{String, Any}}`. Aviary
+# support was removed from OpenMDAOCore in v0.4.0 and the tests that used this
+# helper were deleted, so it currently has no callers. Kept (commented out) in
+# case it's useful again; remove the surrounding `# ` to re-enable.
+# def to_jlsymdictstranydict(d):
+#     T = juliacall.Main.Dict[
+#             juliacall.Main.Symbol,
+#             juliacall.Main.Dict[
+#                 juliacall.Main.String, juliacall.Main.Any]]
+#     return juliacall.convert(T, d)
