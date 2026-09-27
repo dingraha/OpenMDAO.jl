@@ -657,3 +657,30 @@ end
     @test all(rows .== rows_check)
     @test all(cols .== cols_check)
 end
+
+@testitem "_resize_component_vector preserves key order" begin
+    using OpenMDAOCore
+    using Test
+    using ComponentArrays: ComponentVector
+
+    # Use non-alphabetical key order to catch any sorting/reordering bugs.
+    X_ca = ComponentVector(z=1.0, a=[8.0], m=reshape(collect(1:3), 3, 1))
+    original_keys = collect(keys(X_ca))
+
+    # Resize a subset of the components; leave the rest untouched.
+    sizes = Dict(:a => 5, :m => (3, 4))
+    X_ca_resized = OpenMDAOCore._resize_component_vector(X_ca, sizes)
+
+    # 1. Key order must match the original, exactly.
+    @test collect(keys(X_ca_resized)) == original_keys
+
+    # 2. Resized components got the new shapes; untouched ones kept theirs.
+    @test size(X_ca_resized.a) == (5,)
+    @test size(X_ca_resized.m) == (3, 4)
+    @test size(X_ca_resized.z) == ()
+
+    # 3. Existing values were copied over (where they still fit).
+    @test all(X_ca_resized.a .≈ X_ca.a)
+    @test all(X_ca_resized.m .≈ X_ca.m)
+    @test only(X_ca_resized.z) ≈ 1.0
+end

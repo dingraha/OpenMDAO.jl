@@ -505,18 +505,23 @@ end
 
 
 function _resize_component_vector(X_ca, sizes)
-    X_dict = OrderedDict{Symbol,Any}()
-    for ca_name in keys(X_ca)
+    # Preserve the original key order of `X_ca` by building a `NamedTuple`.
+    # A `NamedTuple`'s field order is part of its type, so it is guaranteed to
+    # be preserved when constructing a `ComponentVector` from it (unlike a plain
+    # `Dict`, whose iteration order is unspecified). This replaces the previous
+    # `OrderedDict`-based implementation, removing the `DataStructures` dep.
+    ks = collect(keys(X_ca))
+    vals = map(ks) do ca_name
         if ca_name in keys(sizes)
             # Create an array of the appropriate size.
-            X_dict[ca_name] = zeros(eltype(X_ca), sizes[ca_name])
+            new_arr = zeros(eltype(X_ca), sizes[ca_name])
             # Fill it with the value it should have.
-            X_dict[ca_name] .= X_ca[ca_name]
+            new_arr .= X_ca[ca_name]
+            return new_arr
         else
-            X_dict[ca_name] = X_ca[ca_name]
+            return X_ca[ca_name]
         end
-
     end
-
-    return ComponentVector(X_dict)
+    nt = NamedTuple{tuple(ks...)}(tuple(vals...))
+    return ComponentVector(nt)
 end
