@@ -54,52 +54,48 @@ function f_simple_no_params!(Y, X, params)
     return nothing
 end
 
-function do_compute_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), aviary_output_vars=Dict{Symbol,Dict}())
-    aviary_input_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_input_vars)
-    aviary_output_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_output_vars)
+function do_compute_check(comp)
 
-    inputs_dict = ca2strdict(get_input_ca(comp), aviary_input_names)
-    M, N = size(inputs_dict[get_aviary_input_name(comp, :d)])
-    inputs_dict[get_aviary_input_name(comp, :a)] .= 2.0
-    inputs_dict[get_aviary_input_name(comp, :b)] .= range(3.0, 4.0; length=N)
-    inputs_dict[get_aviary_input_name(comp, :c)] .= range(5.0, 6.0; length=M)
-    inputs_dict[get_aviary_input_name(comp, :d)] .= reshape(range(7.0, 8.0; length=M*N), M, N)
-    outputs_dict = ca2strdict(get_output_ca(comp), aviary_output_names)
+    inputs_dict = ca2strdict(get_input_ca(comp))
+    M, N = size(inputs_dict["d"])
+    inputs_dict["a"] .= 2.0
+    inputs_dict["b"] .= range(3.0, 4.0; length=N)
+    inputs_dict["c"] .= range(5.0, 6.0; length=M)
+    inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    outputs_dict = ca2strdict(get_output_ca(comp))
 
     OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
-    a, b, c, d = getindex.(Ref(inputs_dict), [get_aviary_input_name(comp, :a), get_aviary_input_name(comp, :b), get_aviary_input_name(comp, :c), get_aviary_input_name(comp, :d)])
+    a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
     e_check = 2.0*a.^2 .+ 3 .* b.^2.1 .+ 4*sum(c.^2.2) .+ 5 .* sum(d.^2.3; dims=1)[:]
-    @test all(outputs_dict[get_aviary_output_name(comp, :e)] .≈ e_check)
+    @test all(outputs_dict["e"] .≈ e_check)
 
     f_check = 6.0*a.^2.4 .+ 7 .* reshape(b, 1, :).^2.5 .+ 8 .* c.^2.6 .+ 9 .* d.^2.7
-    @test all(outputs_dict[get_aviary_output_name(comp, :f)] .≈ f_check)
+    @test all(outputs_dict["f"] .≈ f_check)
 
     g_check = 10 .* sin.(b).*cos.(transpose(d))
-    @test all(outputs_dict[get_aviary_output_name(comp, :g)] .≈ g_check)
+    @test all(outputs_dict["g"] .≈ g_check)
 
     return nothing
 end
 
-function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), aviary_output_vars=Dict{Symbol,Dict}())
+function do_compute_partials_check(comp)
     sparse_jac = typeof(comp) <: SparseADExplicitComp
 
-    aviary_input_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_input_vars)
-    aviary_output_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_output_vars)
 
-    inputs_dict = ca2strdict(get_input_ca(comp), aviary_input_names)
-    M, N = size(inputs_dict[get_aviary_input_name(comp, :d)])
-    inputs_dict[get_aviary_input_name(comp, :a)] .= 2.0
-    inputs_dict[get_aviary_input_name(comp, :b)] .= range(3.0, 4.0; length=N)
-    inputs_dict[get_aviary_input_name(comp, :c)] .= range(5.0, 6.0; length=M)
-    inputs_dict[get_aviary_input_name(comp, :d)] .= reshape(range(7.0, 8.0; length=M*N), M, N)
-    outputs_dict = ca2strdict(get_output_ca(comp), aviary_output_names)
+    inputs_dict = ca2strdict(get_input_ca(comp))
+    M, N = size(inputs_dict["d"])
+    inputs_dict["a"] .= 2.0
+    inputs_dict["b"] .= range(3.0, 4.0; length=N)
+    inputs_dict["c"] .= range(5.0, 6.0; length=M)
+    inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    outputs_dict = ca2strdict(get_output_ca(comp))
 
-    inputs_dict_cs = ca2strdict(get_input_ca(ComplexF64, comp), aviary_input_names)
-    inputs_dict_cs[get_aviary_input_name(comp, :a)] .= inputs_dict[get_aviary_input_name(comp, :a)]
-    inputs_dict_cs[get_aviary_input_name(comp, :b)] .= inputs_dict[get_aviary_input_name(comp, :b)]
-    inputs_dict_cs[get_aviary_input_name(comp, :c)] .= inputs_dict[get_aviary_input_name(comp, :c)]
-    inputs_dict_cs[get_aviary_input_name(comp, :d)] .= inputs_dict[get_aviary_input_name(comp, :d)]
-    outputs_dict_cs = ca2strdict(get_output_ca(ComplexF64, comp), aviary_output_names)
+    inputs_dict_cs = ca2strdict(get_input_ca(ComplexF64, comp))
+    inputs_dict_cs["a"] .= inputs_dict["a"]
+    inputs_dict_cs["b"] .= inputs_dict["b"]
+    inputs_dict_cs["c"] .= inputs_dict["c"]
+    inputs_dict_cs["d"] .= inputs_dict["d"]
+    outputs_dict_cs = ca2strdict(get_output_ca(ComplexF64, comp))
 
     # Complex step size.
     h = 1e-10
@@ -114,18 +110,18 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
 
     if sparse_jac
         rcdict = get_rows_cols_dict(comp)
-        partials_dict = rcdict2strdict(rcdict; cnames=aviary_input_names, rnames=aviary_output_names)
+        partials_dict = rcdict2strdict(rcdict)
     else
-        partials_dict = ca2strdict(J_ca, aviary_input_names, aviary_output_names)
+        partials_dict = ca2strdict(J_ca)
     end
 
     # Actually do the compute_partials.
     OpenMDAOCore.compute_partials!(comp, inputs_dict, partials_dict)
 
-    a, b, c, d = getindex.(Ref(inputs_dict), [get_aviary_input_name(comp, :a), get_aviary_input_name(comp, :b), get_aviary_input_name(comp, :c), get_aviary_input_name(comp, :d)])
-    e, f, g = getindex.(Ref(outputs_dict), [get_aviary_output_name(comp, :e), get_aviary_output_name(comp, :f), get_aviary_output_name(comp, :g)])
+    a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
+    e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
 
-    vals = partials_dict[get_aviary_output_name(comp, :e), get_aviary_input_name(comp, :a)]
+    vals = partials_dict["e", "a"]
     @test size(vals) == (N,)
     deda_check = zeros(N)
     for n in 1:N
@@ -144,18 +140,18 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     end
     @test all(vals .≈ vals_check)
 
-    inputs_dict_cs[get_aviary_input_name(comp, :a)][1] = inputs_dict[get_aviary_input_name(comp, :a)][1] + im*h
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
     OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
     for n in 1:N
-        @test imag(outputs_dict_cs[get_aviary_output_name(comp, :e)][n])/h ≈ deda_check[n]
+        @test imag(outputs_dict_cs["e"][n])/h ≈ deda_check[n]
     end
-    inputs_dict_cs[get_aviary_input_name(comp, :a)][1] = inputs_dict[get_aviary_input_name(comp, :a)][1]
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1]
 
     dedb_check = zeros(N, N)
     for n in 1:N
         dedb_check[n, n] = (3*2.1)*b[n]^1.1
     end
-    vals = partials_dict[get_aviary_output_name(comp, :e), get_aviary_input_name(comp, :b)]
+    vals = partials_dict["e", "b"]
     if sparse_jac
         @test size(vals) == (N,)
         rows, cols = rcdict[:e, :b]
@@ -170,10 +166,10 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     @test all(vals .≈ vals_check)
     # Check with complex step.
     for n in 1:N
-        inputs_dict_cs[get_aviary_input_name(comp, :b)][n] = inputs_dict[get_aviary_input_name(comp, :b)][n] + im*h
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
         OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-        @test imag(outputs_dict_cs[get_aviary_output_name(comp, :e)][n])/h ≈ dedb_check[n, n]
-        inputs_dict_cs[get_aviary_input_name(comp, :b)][n] = inputs_dict[get_aviary_input_name(comp, :b)][n]
+        @test imag(outputs_dict_cs["e"][n])/h ≈ dedb_check[n, n]
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n]
     end
 
     dedc_check = zeros(N, M)
@@ -182,7 +178,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dedc_check[n, m] = (4*2.2)*c[m]^1.2
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :e), get_aviary_input_name(comp, :c)]
+    vals = partials_dict["e", "c"]
     if sparse_jac
         @test size(vals) == (N*M,)
         rows, cols = rcdict[:e, :c]
@@ -197,12 +193,12 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     @test all(vals .≈ vals_check)
     # Check with complex step.
     for m in 1:M
-        inputs_dict_cs[get_aviary_input_name(comp, :c)][m] = inputs_dict[get_aviary_input_name(comp, :c)][m] + im*h
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
         OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
         for n in 1:N
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :e)][n])/h ≈ dedc_check[n, m]
+            @test imag(outputs_dict_cs["e"][n])/h ≈ dedc_check[n, m]
         end
-        inputs_dict_cs[get_aviary_input_name(comp, :c)][m] = inputs_dict[get_aviary_input_name(comp, :c)][m]
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m]
     end
 
     dedd_check = zeros(N, M, N)
@@ -211,7 +207,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dedd_check[n, m, n] = (5*2.3)*d[m, n]^1.3
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :e), get_aviary_input_name(comp, :d)]
+    vals = partials_dict["e", "d"]
     if sparse_jac
         @test size(vals) == (M*N,)
         rows, cols = rcdict[:e, :d]
@@ -227,10 +223,10 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     # Check with complex step.
     for n in 1:N
         for m in 1:M
-            inputs_dict_cs[get_aviary_input_name(comp, :d)][m, n] = inputs_dict[get_aviary_input_name(comp, :d)][m, n] + im*h
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
             OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :e)][n])/h ≈ dedd_check[n, m, n]
-            inputs_dict_cs[get_aviary_input_name(comp, :d)][m, n] = inputs_dict[get_aviary_input_name(comp, :d)][m, n]
+            @test imag(outputs_dict_cs["e"][n])/h ≈ dedd_check[n, m, n]
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
         end
     end
 
@@ -240,7 +236,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dfda_check[m, n] = (6*2.4)*only(a)^1.4
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :f), get_aviary_input_name(comp, :a)]
+    vals = partials_dict["f", "a"]
     if sparse_jac
         @test size(vals) == (M*N,)
         rows, cols = rcdict[:f, :a]
@@ -254,14 +250,14 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     end
     @test all(vals .≈ vals_check)
     # Check with complex step.
-    inputs_dict_cs[get_aviary_input_name(comp, :a)][1] = inputs_dict[get_aviary_input_name(comp, :a)][1] + im*h
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
     OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
     for n in 1:N
         for m in 1:N
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :f)][m, n])/h ≈ dfda_check[m, n]
+            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfda_check[m, n]
         end
     end
-    inputs_dict_cs[get_aviary_input_name(comp, :a)][1] = inputs_dict[get_aviary_input_name(comp, :a)][1]
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1]
 
     dfdb_check = zeros(M, N, N)
     for n in 1:N
@@ -269,7 +265,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dfdb_check[m, n, n] = (7*2.5)*b[n]^1.5
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :f), get_aviary_input_name(comp, :b)]
+    vals = partials_dict["f", "b"]
     if sparse_jac
         @test size(vals) == (M*N,)
         rows, cols = rcdict[:f, :b]
@@ -284,12 +280,12 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     @test all(vals .≈ vals_check)
     # Check with complex step.
     for n in 1:N
-        inputs_dict_cs[get_aviary_input_name(comp, :b)][n] = inputs_dict[get_aviary_input_name(comp, :b)][n] + im*h
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
         OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
         for m in 1:M
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :f)][m, n])/h ≈ dfdb_check[m, n, n]
+            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfdb_check[m, n, n]
         end
-        inputs_dict_cs[get_aviary_input_name(comp, :b)][n] = inputs_dict[get_aviary_input_name(comp, :b)][n]
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n]
     end
 
     dfdc_check = zeros(M, N, M)
@@ -298,7 +294,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dfdc_check[m, n, m] = (8*2.6)*c[m]^1.6
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :f), get_aviary_input_name(comp, :c)]
+    vals = partials_dict["f", "c"]
     if sparse_jac
         @test size(vals) == (M*N,)
         rows, cols = rcdict[:f, :c]
@@ -313,12 +309,12 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     @test all(vals .≈ vals_check)
     # Check with complex step.
     for m in 1:M
-        inputs_dict_cs[get_aviary_input_name(comp, :c)][m] = inputs_dict[get_aviary_input_name(comp, :c)][m] + im*h
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
         OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
         for n in 1:N
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :f)][m, n])/h ≈ dfdc_check[m, n, m]
+            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfdc_check[m, n, m]
         end
-        inputs_dict_cs[get_aviary_input_name(comp, :c)][m] = inputs_dict[get_aviary_input_name(comp, :c)][m]
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m]
     end
 
     dfdd_check = zeros(M, N, M, N)
@@ -327,7 +323,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dfdd_check[m, n, m, n] = (9*2.7)*d[m, n]^1.7
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :f), get_aviary_input_name(comp, :d)]
+    vals = partials_dict["f", "d"]
     if sparse_jac
         @test size(vals) == (M*N,)
         rows, cols = rcdict[:f, :d]
@@ -343,14 +339,14 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     # Check with complex step.
     for n in 1:N
         for m in 1:M
-            inputs_dict_cs[get_aviary_input_name(comp, :d)][m, n] = inputs_dict[get_aviary_input_name(comp, :d)][m, n] + im*h
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
             OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :f)][m, n])/h ≈ dfdd_check[m, n, m, n]
-            inputs_dict_cs[get_aviary_input_name(comp, :d)][m, n] = inputs_dict[get_aviary_input_name(comp, :d)][m, n]
+            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfdd_check[m, n, m, n]
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
         end
     end
 
-    vals = partials_dict[get_aviary_output_name(comp, :g), get_aviary_input_name(comp, :a)]
+    vals = partials_dict["g", "a"]
     if sparse_jac
         @test size(vals) == (0,)
         rows, cols = rcdict[:g, :a]
@@ -362,14 +358,14 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
         @test all(vals .≈ 0)
     end
     # Check with complex step.
-    inputs_dict_cs[get_aviary_input_name(comp, :a)][1] = inputs_dict[get_aviary_input_name(comp, :a)][1] + im*h
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
     OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
     for m in 1:M
         for n in 1:N
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :g)][n, m])/h ≈ 0
+            @test imag(outputs_dict_cs["g"][n, m])/h ≈ 0
         end
     end
-    inputs_dict_cs[get_aviary_input_name(comp, :a)][1] = inputs_dict[get_aviary_input_name(comp, :a)][1]
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1]
 
     dgdb_check = zeros(N, M, N)
     for m in 1:M
@@ -377,7 +373,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dgdb_check[n, m, n] = 10*cos(b[n])*cos(d[m, n])
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :g), get_aviary_input_name(comp, :b)]
+    vals = partials_dict["g", "b"]
     if sparse_jac
         @test size(vals) == (N*M,)
         rows, cols = rcdict[:g, :b]
@@ -392,15 +388,15 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     @test all(vals .≈ vals_check)
     # Check with complex step.
     for n in 1:N
-        inputs_dict_cs[get_aviary_input_name(comp, :b)][n] = inputs_dict[get_aviary_input_name(comp, :b)][n] + im*h
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
         OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
         for m in 1:M
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :g)][n, m])/h ≈ dgdb_check[n, m, n]
+            @test imag(outputs_dict_cs["g"][n, m])/h ≈ dgdb_check[n, m, n]
         end
-        inputs_dict_cs[get_aviary_input_name(comp, :b)][n] = inputs_dict[get_aviary_input_name(comp, :b)][n]
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n]
     end
 
-    vals = partials_dict[get_aviary_output_name(comp, :g), get_aviary_input_name(comp, :c)]
+    vals = partials_dict["g", "c"]
     if sparse_jac
         @test size(vals) == (0,)
         rows, cols = rcdict[:g, :c]
@@ -413,12 +409,12 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     end
     # Check with complex step.
     for m in 1:M
-        inputs_dict_cs[get_aviary_input_name(comp, :c)][m] = inputs_dict[get_aviary_input_name(comp, :c)][m] + im*h
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
         OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
         for n in 1:N
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :g)][n, m])/h ≈ 0
+            @test imag(outputs_dict_cs["g"][n, m])/h ≈ 0
         end
-        inputs_dict_cs[get_aviary_input_name(comp, :c)][m] = inputs_dict[get_aviary_input_name(comp, :c)][m]
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m]
     end
 
     dgdd_check = zeros(N, M, M, N)
@@ -427,7 +423,7 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
             dgdd_check[n, m, m, n] = -10*sin(b[n])*sin(d[m, n])
         end
     end
-    vals = partials_dict[get_aviary_output_name(comp, :g), get_aviary_input_name(comp, :d)]
+    vals = partials_dict["g", "d"]
     if sparse_jac
         @test size(vals) == (N*M,)
         rows, cols = rcdict[:g, :d]
@@ -443,15 +439,15 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     # Check with complex step.
     for n in 1:N
         for m in 1:M
-            inputs_dict_cs[get_aviary_input_name(comp, :d)][m, n] = inputs_dict[get_aviary_input_name(comp, :d)][m, n] + im*h
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
             OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-            @test imag(outputs_dict_cs[get_aviary_output_name(comp, :g)][n, m])/h ≈ dgdd_check[n, m, m, n]
-            inputs_dict_cs[get_aviary_input_name(comp, :d)][m, n] = inputs_dict[get_aviary_input_name(comp, :d)][m, n]
+            @test imag(outputs_dict_cs["g"][n, m])/h ≈ dgdd_check[n, m, m, n]
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
         end
     end
 
     # Check that the partials_dict created by ca2strdict gives the same result as one created using rcdict2strdict.
-    partials_dict2 = ca2strdict(J_ca, aviary_input_names, aviary_output_names)
+    partials_dict2 = ca2strdict(J_ca)
     # So I think partitals_dict has sparse arrays, but partials_dict2 might just have dense arrays.
     # Ah, no, partials_dict has just plain vectors, but partials_dict2 has reshaped sparse arrays.
     @test keys(partials_dict2) == keys(partials_dict)
@@ -463,28 +459,26 @@ function do_compute_partials_check(comp, aviary_input_vars=Dict{Symbol,Dict}(), 
     return nothing
 end
 
-function do_compute_jacvec_product_check_forward(comp, aviary_input_vars=Dict{Symbol,Dict}(), aviary_output_vars=Dict{Symbol,Dict}())
-    aviary_input_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_input_vars)
-    aviary_output_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_output_vars)
+function do_compute_jacvec_product_check_forward(comp)
 
-    inputs_dict = ca2strdict(get_input_ca(comp), aviary_input_names)
-    M, N = size(inputs_dict[get_aviary_input_name(comp, :d)])
-    inputs_dict[get_aviary_input_name(comp, :a)] .= 2.0
-    inputs_dict[get_aviary_input_name(comp, :b)] .= range(3.0, 4.0; length=N)
-    inputs_dict[get_aviary_input_name(comp, :c)] .= range(5.0, 6.0; length=M)
-    inputs_dict[get_aviary_input_name(comp, :d)] .= reshape(range(7.0, 8.0; length=M*N), M, N)
-    outputs_dict = ca2strdict(get_output_ca(comp), aviary_output_names)
+    inputs_dict = ca2strdict(get_input_ca(comp))
+    M, N = size(inputs_dict["d"])
+    inputs_dict["a"] .= 2.0
+    inputs_dict["b"] .= range(3.0, 4.0; length=N)
+    inputs_dict["c"] .= range(5.0, 6.0; length=M)
+    inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    outputs_dict = ca2strdict(get_output_ca(comp))
 
     OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
 
-    a, b, c, d = getindex.(Ref(inputs_dict), [get_aviary_input_name(comp, :a), get_aviary_input_name(comp, :b), get_aviary_input_name(comp, :c), get_aviary_input_name(comp, :d)])
-    e, f, g = getindex.(Ref(outputs_dict), [get_aviary_output_name(comp, :e), get_aviary_output_name(comp, :f), get_aviary_output_name(comp, :g)])
+    a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
+    e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
 
     # So, to call `_compute_jacvec_product!`, I need a dict of derivatives that, I think, is like the inputs.
     dx = get_dinput_ca(comp)
     dx .= rand(length(dx))
-    dinputs_dict = ca2strdict(dx, aviary_input_names)
-    doutputs_dict = ca2strdict(get_doutput_ca(comp), aviary_output_names)
+    dinputs_dict = ca2strdict(dx)
+    doutputs_dict = ca2strdict(get_doutput_ca(comp))
     for k in keys(doutputs_dict)
         doutputs_dict[k] .= 0
     end
@@ -535,7 +529,7 @@ function do_compute_jacvec_product_check_forward(comp, aviary_input_vars=Dict{Sy
     de_check .+= dedd_check_rs * dxd_rs
 
     # Did all the inputs to `e`, so we're ready to test.
-    @test all(doutputs_dict[get_aviary_output_name(comp, :e)] .≈ de_check)
+    @test all(doutputs_dict["e"] .≈ de_check)
 
     # Now do `f`.
     df_check = similar(f)
@@ -565,7 +559,7 @@ function do_compute_jacvec_product_check_forward(comp, aviary_input_vars=Dict{Sy
         end
     end
 
-    @test all(doutputs_dict[get_aviary_output_name(comp, :f)] .≈ df_check)
+    @test all(doutputs_dict["f"] .≈ df_check)
 
     # Now do `g`.
     dg_check = similar(g)
@@ -589,33 +583,31 @@ function do_compute_jacvec_product_check_forward(comp, aviary_input_vars=Dict{Sy
         end
     end
 
-    @test all(doutputs_dict[get_aviary_output_name(comp, :g)] .≈ dg_check)
+    @test all(doutputs_dict["g"] .≈ dg_check)
 
     return nothing
 end
 
-function do_compute_jacvec_product_check_reverse(comp, aviary_input_vars=Dict{Symbol,Dict}(), aviary_output_vars=Dict{Symbol,Dict}())
-    aviary_input_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_input_vars)
-    aviary_output_names = Dict{Symbol,String}(k=>get(v, "name", string(k)) for (k, v) in aviary_output_vars)
+function do_compute_jacvec_product_check_reverse(comp)
 
-    inputs_dict = ca2strdict(get_input_ca(comp), aviary_input_names)
-    M, N = size(inputs_dict[get_aviary_input_name(comp, :d)])
-    inputs_dict[get_aviary_input_name(comp, :a)] .= 2.0
-    inputs_dict[get_aviary_input_name(comp, :b)] .= range(3.0, 4.0; length=N)
-    inputs_dict[get_aviary_input_name(comp, :c)] .= range(5.0, 6.0; length=M)
-    inputs_dict[get_aviary_input_name(comp, :d)] .= reshape(range(7.0, 8.0; length=M*N), M, N)
-    outputs_dict = ca2strdict(get_output_ca(comp), aviary_output_names)
+    inputs_dict = ca2strdict(get_input_ca(comp))
+    M, N = size(inputs_dict["d"])
+    inputs_dict["a"] .= 2.0
+    inputs_dict["b"] .= range(3.0, 4.0; length=N)
+    inputs_dict["c"] .= range(5.0, 6.0; length=M)
+    inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    outputs_dict = ca2strdict(get_output_ca(comp))
 
     OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
 
-    a, b, c, d = getindex.(Ref(inputs_dict), [get_aviary_input_name(comp, :a), get_aviary_input_name(comp, :b), get_aviary_input_name(comp, :c), get_aviary_input_name(comp, :d)])
-    e, f, g = getindex.(Ref(outputs_dict), [get_aviary_output_name(comp, :e), get_aviary_output_name(comp, :f), get_aviary_output_name(comp, :g)])
+    a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
+    e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
 
     # So, to call `_compute_jacvec_product!`, I need a dict of derivatives that, I think, is like the outputs.
     dy = get_doutput_ca(comp)
     dy .= rand(length(dy))
-    doutputs_dict = ca2strdict(dy, aviary_output_names)
-    dinputs_dict = ca2strdict(get_dinput_ca(comp), aviary_input_names)
+    doutputs_dict = ca2strdict(dy)
+    dinputs_dict = ca2strdict(get_dinput_ca(comp))
     for k in keys(dinputs_dict)
         dinputs_dict[k] .= 0
     end
@@ -641,7 +633,7 @@ function do_compute_jacvec_product_check_reverse(comp, aviary_input_vars=Dict{Sy
     # Derivative of g wrt a is zero.
 
     # Did all the outputs with `a`, so we're ready to test.
-    @test all(dinputs_dict[get_aviary_input_name(comp, :a)] .≈ da_check)
+    @test all(dinputs_dict["a"] .≈ da_check)
 
     # Next, `b`.
     db_check = similar(b)
@@ -667,7 +659,7 @@ function do_compute_jacvec_product_check_reverse(comp, aviary_input_vars=Dict{Sy
     end
 
     # That's all the outputs with `b`, so we're ready to check.
-    @test all(dinputs_dict[get_aviary_input_name(comp, :b)] .≈ db_check)
+    @test all(dinputs_dict["b"] .≈ db_check)
 
     # Now derivatives wrt c.
     dc_check = similar(c)
@@ -690,7 +682,7 @@ function do_compute_jacvec_product_check_reverse(comp, aviary_input_vars=Dict{Sy
     # Derivative of `g` wrt c is 0.
     
     # Did all the outputs, so ready to check.
-    @test all(dinputs_dict[get_aviary_input_name(comp, :c)] .≈ dc_check)
+    @test all(dinputs_dict["c"] .≈ dc_check)
 
     # Now derivatives wrt d.
     dd_check = similar(d)
@@ -718,7 +710,7 @@ function do_compute_jacvec_product_check_reverse(comp, aviary_input_vars=Dict{Sy
     end
 
     # Now check.
-    @test all(dinputs_dict[get_aviary_input_name(comp, :d)] .≈ dd_check)
+    @test all(dinputs_dict["d"] .≈ dd_check)
 
     return nothing
 end
