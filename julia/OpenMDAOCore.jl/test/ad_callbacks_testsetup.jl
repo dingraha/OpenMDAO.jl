@@ -1,5 +1,15 @@
 @testsetup module ADCallbacks
 
+# Load the weakdeps BEFORE `OpenMDAOCore` so that the
+# `OpenMDAOCoreSparseMatrixColoringsExt` extension is triggered when
+# `OpenMDAOCore` loads. The extension defines `SparseADExplicitComp`,
+# `get_rows_cols_dict`, `get_rows_cols_dict_from_sparsity`, `ca2strdict_sparse`,
+# and `PerturbedDenseSparsityDetector`, which are then re-exported by
+# `OpenMDAOCore`. If these are loaded after `OpenMDAOCore`, the extension never
+# triggers and the names are unavailable (see the "Imported binding ... was
+# undeclared at import time" warnings).
+using SparseArrays: sparse, findnz, nnz, issparse
+using SparseMatrixColorings: SparseMatrixColorings
 using OpenMDAOCore: OpenMDAOCore
 using ComponentArrays: ComponentVector, ComponentMatrix, getdata, getaxes
 using ADTypes: ADTypes
@@ -7,8 +17,6 @@ using Enzyme: Enzyme
 using EnzymeCore: EnzymeCore
 using ForwardDiff: ForwardDiff
 using ReverseDiff: ReverseDiff
-using SparseArrays: sparse, findnz, nnz, issparse
-using SparseMatrixColorings: SparseMatrixColorings
 using Test: @test, @test_throws
 using Zygote: Zygote
 

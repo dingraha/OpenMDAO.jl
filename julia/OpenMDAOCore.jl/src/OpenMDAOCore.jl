@@ -4,11 +4,9 @@ using ADTypes: ADTypes
 using ComponentArrays: ComponentArray, ComponentVector, ComponentMatrix, getaxes, getdata
 using DifferentiationInterface: DifferentiationInterface
 using Random: rand!
-using SparseArrays: sparse, findnz, nonzeros, AbstractSparseArray
-using SparseMatrixColorings: SparseMatrixColorings
 
 include("utils.jl")
-export get_rows_cols, get_rows_cols_dict_from_sparsity, ca2strdict, ca2strdict_sparse, rcdict2strdict, PerturbedDenseSparsityDetector
+export get_rows_cols, ca2strdict, rcdict2strdict
 
 include("interface.jl")
 export AbstractComp, AbstractExplicitComp, AbstractImplicitComp
@@ -28,10 +26,15 @@ export get_callback, get_input_ca, get_output_ca, get_jacobian_ca, get_units, ge
 include("dense_ad.jl")
 export DenseADExplicitComp
 
-include("sparse_ad.jl")
-export SparseADExplicitComp, get_rows_cols_dict
-
 include("matrix_free_ad.jl")
 export MatrixFreeADExplicitComp, get_dinput_ca, get_doutput_ca
+
+# Sparse types are declared in the main package so they can be imported and
+# dispatched on without the extension loaded. The sparse *functionality*
+# (constructors, `compute_partials!`, sparsity detection, etc.) is provided by
+# the `OpenMDAOCoreSparseMatrixColoringsExt` extension, which loads when both
+# `SparseArrays` and `SparseMatrixColorings` are available.
+include("sparse_ad.jl")
+export SparseADExplicitComp, get_rows_cols_dict, PerturbedDenseSparsityDetector
 
 end # module

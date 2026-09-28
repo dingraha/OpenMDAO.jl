@@ -1,0 +1,645 @@
+module OpenMDAOCoreSparseMatrixColoringsExt
+
+using ComponentArrays: ComponentVector, ComponentMatrix, getaxes, getdata
+using ADTypes: ADTypes
+using DifferentiationInterface: DifferentiationInterface
+using SparseArrays: sparse, findnz, nonzeros, AbstractSparseArray
+using SparseMatrixColorings: SparseMatrixColorings
+using Random: rand!
+
+# Bring in names from the parent module so the sparse methods can hook into the
+# existing interface. These are either exported (available via `using`) or
+# accessed qualified for the non-exported helpers.
+using OpenMDAOCore: OpenMDAOCore,
+    AbstractADExplicitComp, AbstractExplicitComp,
+    get_callback, get_input_ca, get_output_ca, get_prep, get_backend, get_units,
+    VarData, PartialsData,
+    get_rows_cols, get_rows_cols_dict, ca2strdict, rcdict2strdict,
+    _maybe_nonzeros
+
+# Sparse-specific utilities --------------------------------------------------
+
+"""
+    get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
+
+Get a `Dict` of the non-zero row and column indices for a sparsity pattern defined by a `ComponentMatrix` representation of a Jacobian.
+"""
+function get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
+    rcdict = Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}()
+    raxis, caxis = getaxes(J)
+    for input_name in keys(caxis)
+        for output_name in keys(raxis)
+            # Grab the subjacobian we're interested in.
+            Jsub = J[output_name, input_name]
+            # We have to re-sparsify `Jsub` sometimes.
+            # For example, if the output is a 2D array and the input is scalar, `Jsub` will be a reshaped sparse vector, which doesn't work with `findnz`.
+            # Passing `Jsub` in that case to `sparse` converts it to a `SparseMatrixCSC`, which works with `findnz`.
+            # Unfortunately that does appear to copy memory.
+            # It'd be nice if I didn't have to do that.
+            # But should be pretty small if the sub-jacobians are actually sparse.
+            if typeof(Jsub) <: Number
+                # Both input and output is scalar, so check if this scalar sub-Jacobian is zero or not.
+                if Jsub ≈ zero(Jsub)
+                    rows = cols = Vector{Int}()
+                else
+                    rows = cols = [1]
+                end
+            else
+                Jsub_reshape = reshape(Jsub, length(raxis[output_name]), length(caxis[input_name]))
+                rows, cols, vals = findnz(sparse(Jsub_reshape))
+            end
+            rcdict[output_name, input_name] = rows, cols
+        end
+    end
+
+    return rcdict
+end
+
+function ca2strdict_sparse(ca::ComponentMatrix)
+    T = eltype(ca)
+    raxis, caxis = getaxes(ca)
+    out = Dict{Tuple{String,String}, Vector{T}}()
+    for input_name in keys(caxis)
+        for output_name in keys(raxis)
+            Jsub = ca[output_name, input_name]
+            Jsub_reshape = reshape(Jsub, length(raxis[output_name]), length(caxis[input_name]))
+            data_sparse = sparse(Jsub_reshape)
+            out[string(output_name), string(input_name)] = nonzeros(data_sparse)
+        end
+    end
+    return out
+end
+
+OpenMDAOCore._maybe_nonzeros(A::AbstractSparseArray) = nonzeros(A)
+OpenMDAOCore._maybe_nonzeros(A::Base.ReshapedArray{T,N,P}) where {T,N,P<:AbstractSparseArray} = nonzeros(parent(A))
+
+# PerturbedDenseSparsityDetector --------------------------------------------
+# The `PerturbedDenseSparsityDetector` *type* (struct, `show`, constructor) is
+# declared in the parent `OpenMDAOCore` module so it can be imported without the
+# extension loaded. Only the sparsity-detection *methods* below require
+# `SparseArrays` and stay here.
+
+## Direct
+
+function ADTypes.jacobian_sparsity(f, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:direct})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+
+    rand!(perturb1)
+    rand!(perturb2)
+    x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+    Jabs = abs.(DifferentiationInterface.jacobian(f, backend, x_perturb))
+
+    for i in 1:nevals-1
+        rand!(perturb1)
+        rand!(perturb2)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+        Jabs .+= abs.(DifferentiationInterface.jacobian(f, backend, x_perturb))
+    end
+
+    return sparse(Jabs .> atol)
+end
+
+function ADTypes.jacobian_sparsity(f!, y, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:direct})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+
+    rand!(perturb1)
+    rand!(perturb2)
+    x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+    Jabs = abs.(DifferentiationInterface.jacobian(f!, y, backend, x_perturb))
+
+    for i in 1:nevals-1
+        rand!(perturb1)
+        rand!(perturb2)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+        Jabs .+= abs.(DifferentiationInterface.jacobian(f!, y, backend, x_perturb))
+    end
+
+    return sparse(Jabs .> atol)
+end
+
+function jacobian_sparsity!(Jabs, f!, y, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:direct})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+
+    rand!(perturb1)
+    rand!(perturb2)
+    x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+    Jabs .= abs.(DifferentiationInterface.jacobian(f!, y, backend, x_perturb))
+
+    for i in 1:nevals-1
+        rand!(perturb1)
+        rand!(perturb2)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+        foo = abs.(DifferentiationInterface.jacobian(f!, y, backend, x_perturb))
+        Jabs .+= foo
+    end
+
+    return nothing
+end
+
+function ADTypes.hessian_sparsity(f, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:direct})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+
+    rand!(perturb1)
+    rand!(perturb2)
+    x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+    Habs = abs.(DifferentiationInterface.hessian(f, backend, x_perturb))
+
+    for i in 1:nevals-1
+        rand!(perturb1)
+        rand!(perturb2)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+        Habs .+= abs.(DifferentiationInterface.hessian(f, backend, x_perturb))
+    end
+
+    return sparse(Habs .> atol)
+end
+
+function ADTypes.jacobian_sparsity(f, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:iterative})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+    y = f(x)
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+
+    n, m = length(x), length(y)
+    IJ = Vector{Tuple{Int,Int}}()
+
+    # Need to make sure I don't add duplicates to I and J.
+    # I guess the only way to do that is just to check.
+    # It would be cool if I could skip adding non-zero entries for rows/columns that I've already identified as all non-sparse.
+    for _ in 1:nevals
+        rand!(perturb1)
+        rand!(perturb2)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+
+        if DifferentiationInterface.pushforward_performance(backend) isa DifferentiationInterface.PushforwardFast
+            p = similar(y)
+            prep = DifferentiationInterface.prepare_pushforward_same_point(
+                f, backend, x_perturb, (DifferentiationInterface.basis(x_perturb, first(eachindex(x_perturb))),)
+            )
+            for (kj, j) in enumerate(eachindex(x_perturb))
+                DifferentiationInterface.pushforward!(f, (p,), prep, backend, x_perturb, (DifferentiationInterface.basis(x_perturb, j),))
+                for ki in LinearIndices(p)
+                    if (abs(p[ki]) > atol) && !((ki, kj) in IJ)
+                        push!(IJ, (ki, kj))
+                    end
+                end
+            end
+        else
+            p = similar(x_perturb)
+            prep = DifferentiationInterface.prepare_pullback_same_point(
+                f, backend, x_perturb, (DifferentiationInterface.basis(y, first(eachindex(y))),)
+            )
+            for (ki, i) in enumerate(eachindex(y))
+                DifferentiationInterface.pullback!(f, (p,), prep, backend, x_perturb, (DifferentiationInterface.basis(y, i),))
+                for kj in LinearIndices(p)
+                    if (abs(p[kj]) > atol) && !((ki, kj) in IJ)
+                        push!(IJ, (ki, kj))
+                    end
+                end
+            end
+        end
+    end
+
+    I = getindex.(IJ, 1)
+    J = getindex.(IJ, 2)
+    return sparse(I, J, ones(Bool, length(I)), m, n)
+end
+
+function ADTypes.jacobian_sparsity(f!, y, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:iterative})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+
+    n, m = length(x), length(y)
+    IJ = Vector{Tuple{Int,Int}}()
+
+    for _ in 1:nevals
+        rand!(perturb1)
+        rand!(perturb2)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+
+        if DifferentiationInterface.pushforward_performance(backend) isa DifferentiationInterface.PushforwardFast
+            p = similar(y)
+            prep = DifferentiationInterface.prepare_pushforward_same_point(
+                f!, y, backend, x_perturb, (DifferentiationInterface.basis(x_perturb, first(eachindex(x_perturb))),)
+            )
+            for (kj, j) in enumerate(eachindex(x_perturb))
+                DifferentiationInterface.pushforward!(f!, y, (p,), prep, backend, x_perturb, (DifferentiationInterface.basis(x_perturb, j),))
+                for ki in LinearIndices(p)
+                    if (abs(p[ki]) > atol) && !((ki, kj) in IJ)
+                        push!(IJ, (ki, kj))
+                    end
+                end
+            end
+        else
+            p = similar(x_perturb)
+            prep = DifferentiationInterface.prepare_pullback_same_point(
+                f!, y, backend, x_perturb, (DifferentiationInterface.basis(y, first(eachindex(y))),)
+            )
+            for (ki, i) in enumerate(eachindex(y))
+                DifferentiationInterface.pullback!(f!, y, (p,), prep, backend, x_perturb, (DifferentiationInterface.basis(y, i),))
+                for kj in LinearIndices(p)
+                    if (abs(p[kj]) > atol) && !((ki, kj) in IJ)
+                        push!(IJ, (ki, kj))
+                    end
+                end
+            end
+        end
+    end
+
+    I = getindex.(IJ, 1)
+    J = getindex.(IJ, 2)
+    return sparse(I, J, ones(Bool, length(I)), m, n)
+end
+
+function ADTypes.hessian_sparsity(f, x, detector::OpenMDAOCore.PerturbedDenseSparsityDetector{:iterative})
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+
+    x_perturb = similar(x)
+    perturb1 = similar(x)
+    perturb2 = similar(x)
+    p = similar(x)
+
+    n = length(x)
+    IJ = Vector{Tuple{Int,Int}}()
+    for _ in 1:nevals
+        rand!(perturb)
+        x_perturb .= (1 .+ rel_x_perturb.*(perturb1 .- 0.5)).*x .+ (perturb2 .- 0.5).*abs_x_perturb
+
+        prep = DifferentiationInterface.prepare_hvp_same_point(f, backend, x_perturb, (DifferentiationInterface.basis(x_perturb, first(eachindex(x_perturb))),))
+        for (kj, j) in enumerate(eachindex(x_perturb))
+            DifferentiationInterface.hvp!(f, (p,), prep, backend, x_perturb, (DifferentiationInterface.basis(x_perturb, j),))
+            for ki in LinearIndices(p)
+                if (abs(p[ki]) > atol) && !((ki, kj) in IJ)
+                    push!(IJ, (ki, kj))
+                end
+            end
+        end
+    end
+
+    I = getindex.(IJ, 1)
+    J = getindex.(IJ, 2)
+    return sparse(I, J, ones(Bool, length(I)), n, n)
+end
+
+# SparseADExplicitComp -------------------------------------------------------
+
+# `SparseADExplicitComp` *type* (struct + inner constructors + trivial field
+# accessors) is declared in the parent `OpenMDAOCore` module so it can be
+# imported without the extension loaded. Only the outer constructors and the
+# `compute_partials!`/`setup_partials`/`update_prep`/`get_partials_data` methods
+# below require `SparseArrays`/`SparseMatrixColorings` and stay here.
+
+"""
+    SparseADExplicitComp(ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+
+Create a `SparseADExplicitComp` from a user-defined function and output and input `ComponentVector`s.
+
+# Positional Arguments
+* `ad_backend`: `<:ADTypes.AutoSparse` automatic differentation "backend" library
+* `f!`: function of the form `f!(Y_ca, X_ca, params)` which writes outputs to `Y_ca` using inputs `X_ca` and, optionally, parameters `params`.
+* `Y_ca`: `ComponentVector` of outputs
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the third argument to `f!`. Could be anything, or `nothing`, but the derivatives of `Y_ca` with respect to `params` will not be calculated
+* `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s)
+* `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep!`
+"""
+function OpenMDAOCore.SparseADExplicitComp(ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+
+    # Create a new user-defined function that captures the `params` argument.
+    # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
+    compute_adable = let params=params
+        (Y, X)->begin
+            f!(Y, X, params)
+            return nothing
+        end
+    end
+
+    # Get the prep-related stuff.
+    if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
+        prep, J_ca_sparse, rcdict, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, Y_ca, X_ca)
+    else
+        # No point in getting a "good" prep when we don't know all the shapes.
+        prep = J_ca_sparse = X_ca_cs = Y_ca_cs = nothing
+        rcdict = Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}()
+    end
+
+    return OpenMDAOCore.SparseADExplicitComp{true}(ad_backend, compute_adable, X_ca, Y_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
+end
+
+"""
+    SparseADExplicitComp(ad_backend, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+
+Create a `SparseADExplicitComp` from a user-defined function and output and input `ComponentVector`s.
+
+# Positional Arguments
+* `ad_backend`: `<:ADTypes.AutoSparse` automatic differentation "backend" library
+* `f`: function of the form `Y_ca = f(X_ca, params)` which returns outputs `Y_ca` using inputs `X_ca` and, optionally, parameters `params`.
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the third argument to `f!`. Could be anything, or `nothing`, but the derivatives of `Y_ca` with respect to `params` will not be calculated
+* `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s)
+* `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep!`
+"""
+function OpenMDAOCore.SparseADExplicitComp(ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+
+    # Create a new user-defined function that captures the `params` argument.
+    # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
+    compute_adable = let params=params
+        (X,)->begin
+            return f(X, params)
+        end
+    end
+
+    Y_ca = compute_adable(X_ca)
+
+    # Get the prep-related stuff.
+    if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
+        prep, J_ca_sparse, rcdict, X_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, X_ca)
+    else
+        prep = J_ca_sparse = X_ca_cs = nothing
+        rcdict = Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}()
+    end
+
+    return OpenMDAOCore.SparseADExplicitComp{false}(ad_backend, compute_adable, X_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs)
+end
+
+function _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
+    # Need to "prepare" the backend.
+    prep = DifferentiationInterface.prepare_jacobian(f!, Y_ca, ad_backend, X_ca)
+
+    # Now I think I can get the sparse Jacobian from that.
+    J_sparse = Float64.(SparseMatrixColorings.sparsity_pattern(prep))
+
+    # Then use that sparse Jacobian to create the component matrix version.
+    J_ca_sparse = ComponentMatrix(J_sparse, (only(getaxes(Y_ca,)), only(getaxes(X_ca))))
+
+    # Get a dictionary describing the non-zero rows and cols for each subjacobian.
+    rcdict = get_rows_cols_dict_from_sparsity(J_ca_sparse)
+
+    # Create complex-valued versions of the X_ca_full and Y_ca_full arrays.
+    X_ca_cs = similar(X_ca, ComplexF64)
+    Y_ca_cs = similar(Y_ca, ComplexF64)
+
+    return prep, J_ca_sparse, rcdict, X_ca_cs, Y_ca_cs
+end
+
+function _get_sparse_prep_stuff(ad_backend, f, X_ca)
+    # Need to "prepare" the backend.
+    prep = DifferentiationInterface.prepare_jacobian(f, ad_backend, X_ca)
+
+    # Now I think I can get the sparse Jacobian from that.
+    J_sparse = Float64.(SparseMatrixColorings.sparsity_pattern(prep))
+
+    # Need the output component vector to define the axes of the Jacobian.
+    Y_ca = f(X_ca)
+
+    # Then use that sparse Jacobian to create the component matrix version.
+    J_ca_sparse = ComponentMatrix(J_sparse, (only(getaxes(Y_ca,)), only(getaxes(X_ca))))
+
+    # Get a dictionary describing the non-zero rows and cols for each subjacobian.
+    rcdict = get_rows_cols_dict_from_sparsity(J_ca_sparse)
+
+    # Create complex-valued versions of the X_ca_full and Y_ca_full arrays.
+    X_ca_cs = similar(X_ca, ComplexF64)
+
+    return prep, J_ca_sparse, rcdict, X_ca_cs
+end
+
+function OpenMDAOCore.update_prep(self::OpenMDAOCore.SparseADExplicitComp{true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+
+    if (length(input_sizes) > 0) || (length(output_sizes) > 0)
+        X_ca_old = get_input_ca(self)
+        Y_ca_old = get_output_ca(self)
+
+        # Create a new versions of `X_ca_old` that have the correct sizes and default values.
+        X_ca = OpenMDAOCore._resize_component_vector(X_ca_old, input_sizes)
+        Y_ca = OpenMDAOCore._resize_component_vector(Y_ca_old, output_sizes)
+
+        # Get the new sparsity stuff.
+        ad_backend = get_backend(self)
+        f! = get_callback(self)
+        prep, J_ca_sparse, rcdict, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
+
+        # Now just copy things over.
+        units_dict = self.units_dict
+        tags_dict = self.tags_dict
+        shape_by_conn_dict = self.shape_by_conn_dict
+        copy_shape_dict = self.copy_shape_dict
+
+        self = OpenMDAOCore.SparseADExplicitComp{true}(ad_backend, f!, X_ca, Y_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
+    end
+
+    return self
+end
+
+function OpenMDAOCore.update_prep(self::OpenMDAOCore.SparseADExplicitComp{false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+
+    if length(input_sizes) > 0
+        X_ca_old = get_input_ca(self)
+
+        X_ca = OpenMDAOCore._resize_component_vector(X_ca_old, input_sizes)
+
+        # Get the new sparsity stuff.
+        ad_backend = get_backend(self)
+        f = get_callback(self)
+        prep, J_ca_sparse, rcdict, X_ca_cs = _get_sparse_prep_stuff(ad_backend, f, X_ca)
+
+        # Now just copy things over.
+        units_dict = self.units_dict
+        tags_dict = self.tags_dict
+        shape_by_conn_dict = self.shape_by_conn_dict
+        copy_shape_dict = self.copy_shape_dict
+
+        self = OpenMDAOCore.SparseADExplicitComp{false}(ad_backend, f, X_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs)
+    end
+
+    return self
+end
+
+function  _get_py_indices_non_flat(shape)
+    # First, get the flattened 0-based indices.
+    idx_flat = 0:(prod(shape)-1)
+
+    # Now reshape it into the reversed dimenions, then permute the dimensions.
+    # This will give us an array that has the shape indicated by the `shape` argument to this function, but filled with the appropriated indices for a zero-based, Python-ordered (aka row-major ordered) array.
+    return PermutedDimsArray(reshape(idx_flat, reverse(shape)), length(shape):-1:1)
+end
+
+function  _get_py_indices(shape)
+    idx_non_flat = _get_py_indices_non_flat(shape)
+    # Now create a flattened view:
+    return view(idx_non_flat, :)
+end
+
+function OpenMDAOCore.get_partials_data(self::OpenMDAOCore.SparseADExplicitComp)
+    rcdict = get_rows_cols_dict(self)
+    partials_data = Vector{PartialsData}()
+    X_ca = get_input_ca(self)
+    Y_ca = get_output_ca(self)
+    for (output_name, input_name) in keys(rcdict)
+        rows, cols = rcdict[output_name, input_name]
+
+        # Create an array that has the same shape as the input or output but with Python flat indices™ as values.
+        input_idx_py = _get_py_indices(size(X_ca[input_name]))
+        output_idx_py = _get_py_indices(size(Y_ca[output_name]))
+
+        # Translate the Julia-ordered, 1-based rows and cols to Python-ordered, 0-based rows and cols.
+        cols0based = getindex.(Ref(input_idx_py), cols)
+        rows0based = getindex.(Ref(output_idx_py), rows)
+
+        push!(partials_data, PartialsData(string(output_name), string(input_name); rows=rows0based, cols=cols0based))
+    end
+
+    return partials_data
+end
+
+function OpenMDAOCore.setup_partials(self::OpenMDAOCore.SparseADExplicitComp, input_sizes, output_sizes)
+
+    input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
+    output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
+
+    self_new = OpenMDAOCore.update_prep(self, input_sizes_ca, output_sizes_ca)
+
+    # Now finally get the partials data.
+    return self_new, OpenMDAOCore.get_partials_data(self_new)
+end
+
+function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{true}, inputs, partials)
+    # Copy the inputs into the input `ComponentArray`.
+    X_ca = get_input_ca(self)
+    for iname in keys(X_ca)
+        # This works even if `X_ca[iname]` is a scalar, because of the `@view`!
+        @view(X_ca[iname]) .= inputs[string(iname)]
+    end
+
+    # Get the Jacobian.
+    f! = get_callback(self)
+    Y_ca = get_output_ca(self)
+    J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
+    prep = get_prep(self)
+    ad_backend = get_backend(self)
+    DifferentiationInterface.jacobian!(f!, Y_ca, J_ca_sparse, prep, ad_backend, X_ca)
+
+    # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
+    raxis, caxis = getaxes(J_ca_sparse)
+    rcdict = get_rows_cols_dict(self)
+    for oname in keys(raxis)
+        for iname in keys(caxis)
+            # Grab the subjacobian we're interested in.
+            Jsub_in = @view(J_ca_sparse[oname, iname])
+
+            # Need to reshape the subjacobian to correspond to the rows and cols.
+            nrows = length(raxis[oname])
+            ncols = length(caxis[iname])
+            Jsub_in_reshape = reshape(Jsub_in, nrows, ncols)
+
+            # Grab the entry in partials we're interested in, and write the data we want to it.
+            rows, cols = rcdict[oname, iname]
+
+            # OpenMDAO might not ask for all the partials, and so all combination of output/input keys might not be present in `partials`.
+            local Jsub_out
+            try
+                Jsub_out = partials[string(oname), string(iname)]
+            catch e
+                if !isa(e, KeyError)
+                    rethrow()
+                end
+            else
+                # This will get a vector of the non-zero entries of the sparse sub-Jacobian if it's actually sparse, or just a reference to the flattened vector of the dense sub-Jacobian otherwise.
+                Jsub_out_vec = _maybe_nonzeros(Jsub_out)
+
+                # Now write the non-zero entries to Jsub_out_vec.
+                Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
+            end
+
+        end
+    end
+
+    return nothing
+end
+
+function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{false}, inputs, partials)
+    # Copy the inputs into the input `ComponentArray`.
+    X_ca = get_input_ca(self)
+    for iname in keys(X_ca)
+        # This works even if `X_ca[iname]` is a scalar, because of the `@view`!
+        @view(X_ca[iname]) .= inputs[string(iname)]
+    end
+
+    # Get the Jacobian.
+    f = get_callback(self)
+    J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
+    prep = get_prep(self)
+    ad_backend = get_backend(self)
+    DifferentiationInterface.jacobian!(f, J_ca_sparse, prep, ad_backend, X_ca)
+
+    # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
+    raxis, caxis = getaxes(J_ca_sparse)
+    rcdict = get_rows_cols_dict(self)
+    for oname in keys(raxis)
+        for iname in keys(caxis)
+            # Grab the subjacobian we're interested in.
+            Jsub_in = @view(J_ca_sparse[oname, iname])
+
+            # Need to reshape the subjacobian to correspond to the rows and cols.
+            nrows = length(raxis[oname])
+            ncols = length(caxis[iname])
+            Jsub_in_reshape = reshape(Jsub_in, nrows, ncols)
+
+            # Grab the entry in partials we're interested in, and write the data we want to it.
+            rows, cols = rcdict[oname, iname]
+
+            # OpenMDAO might not ask for all the partials, and so all combination of output/input keys might not be present in `partials`.
+            local Jsub_out
+            try
+                Jsub_out = partials[string(oname), string(iname)]
+            catch e
+                if !isa(e, KeyError)
+                    rethrow()
+                end
+            else
+                # This will get a vector of the non-zero entries of the sparse sub-Jacobian if it's actually sparse, or just a reference to the flattened vector of the dense sub-Jacobian otherwise.
+                Jsub_out_vec = _maybe_nonzeros(Jsub_out)
+
+                # Now write the non-zero entries to Jsub_out_vec.
+                Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
+            end
+        end
+    end
+
+    return nothing
+end
+
+export get_rows_cols_dict_from_sparsity, ca2strdict_sparse
+
+end # module
