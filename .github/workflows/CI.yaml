@@ -116,6 +116,7 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
+          Pkg.Registry.update()
         # env:
         #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: Install juliapkg and add latest version of OpenMDAOCore.jl
@@ -125,8 +126,9 @@ jobs:
           # cp $PWD/python/omjlcomps/test/juliapkg-test.json $PWD/python/omjlcomps/juliapkg.json
           python -m pip install --upgrade pip
           pip install juliapkg'[cli]'
+          python -m juliapkg resolve
           cat ./julia/OpenMDAOCore.jl/Project.toml
-          python -m juliapkg add --dev OpenMDAOCore --path=./julia/OpenMDAOCore.jl
+          python -m juliapkg add --dev OpenMDAOCore --path=$PWD/julia/OpenMDAOCore.jl
           python -m juliapkg resolve
       - name: omjlcomps install
         run: |
