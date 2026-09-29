@@ -7,6 +7,7 @@ using Random: rand!
 
 include("utils.jl")
 export get_rows_cols, ca2strdict, rcdict2strdict, get_rows_cols_dict, ca2strdict_sparse
+export can_jvp, can_vjp
 
 # `PerturbedDenseSparsityDetector` (type + constructor) is declared in the main
 # package so it can be imported without the extension loaded. The sparse
@@ -42,5 +43,8 @@ include("dense_ad.jl")
 
 include("matrix_free_ad.jl")
 export get_dinput_ca, get_doutput_ca
+
+include("create_component.jl")
+export create_explicit_component
 
 end # module

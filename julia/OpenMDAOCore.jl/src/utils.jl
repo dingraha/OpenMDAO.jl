@@ -120,7 +120,20 @@ end
 
 # Moving this to the sparse extension.
 function ca2strdict_sparse end
-function _get_rows_cols_dict_from_sparsity end 
+function _get_rows_cols_dict_from_sparsity end
+
+# AD backend capability helpers (ported from OpenMDAO4Core.jl).
+# Used by `create_explicit_component` to validate that a backend supports the
+# derivative mode implied by the chosen flavor (forward -> JVP, reverse -> VJP).
+function can_jvp(adtype)
+    adtype_mode = ADTypes.mode(adtype)
+    return (adtype_mode isa ADTypes.ForwardMode) || (adtype_mode isa ADTypes.ForwardOrReverseMode)
+end
+
+function can_vjp(adtype)
+    adtype_mode = ADTypes.mode(adtype)
+    return (adtype_mode isa ADTypes.ReverseMode) || (adtype_mode isa ADTypes.ForwardOrReverseMode)
+end
 
 function rcdict2strdict(::Type{T}, rcdict) where {T}
     out = Dict{Tuple{String,String}, Vector{T}}()

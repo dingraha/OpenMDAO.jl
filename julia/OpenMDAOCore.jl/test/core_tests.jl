@@ -687,3 +687,34 @@ end
     @test all(X_ca_resized.m .≈ X_ca.m)
     @test only(X_ca_resized.z) ≈ 1.0
 end
+
+@testitem "create_explicit_component" begin
+    using OpenMDAOCore
+    using Test
+    using ADTypes: ADTypes
+    using ForwardDiff: ForwardDiff
+    using ComponentArrays: ComponentVector
+
+    # Simple in-place function.
+    f!(Y, X, params) = (Y.y = X.x ^ 2; nothing)
+    f(X, params) = ComponentVector(y=X.x ^ 2)
+    X_ca = ComponentVector(x=2.0)
+    Y_ca = ComponentVector(y=0.0)
+
+    # Dense flavor: any backend works; returns the right flavor/InPlace.
+    comp = create_explicit_component(DenseFlavor(), ADTypes.AutoForwardDiff(), f!, Y_ca, X_ca)
+    @test comp isa ADExplicitComp{DenseFlavor, true}
+
+    comp_oop = create_explicit_component(DenseFlavor(), ADTypes.AutoForwardDiff(), f, X_ca)
+    @test comp_oop isa ADExplicitComp{DenseFlavor, false}
+
+    # Matrix-free forward flavor with a forward-capable backend is OK.
+    comp_mf = create_explicit_component(MatrixFreeForwardFlavor(), ADTypes.AutoForwardDiff(), f!, Y_ca, X_ca)
+    @test comp_mf isa ADExplicitComp{MatrixFreeForwardFlavor, true}
+
+    # Matrix-free forward flavor with a reverse-only backend must error.
+    # AutoZygote is reverse-mode (VJP only).
+    using Zygote: Zygote
+    @test_throws ArgumentError create_explicit_component(
+        MatrixFreeForwardFlavor(), ADTypes.AutoZygote(), f!, Y_ca, X_ca)
+end
