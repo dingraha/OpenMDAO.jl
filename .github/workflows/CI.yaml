@@ -116,8 +116,8 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: Install juliapkg and add latest version of OpenMDAOCore.jl
         run: |
           echo "PWD = $PWD"
