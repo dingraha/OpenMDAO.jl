@@ -96,7 +96,8 @@ jobs:
         os:
           - ubuntu-latest
           - macOS-latest
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.12"]
         exclude:
           # No idea why this is segfaulting.
           # Only sometimes.
@@ -104,23 +105,23 @@ jobs:
             python-version: "3.13"
     steps:
       - uses: actions/checkout@v2
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: ${{ matrix.julia-version }}
+      # - uses: julia-actions/setup-julia@v1
+      #   with:
+      #     version: ${{ matrix.julia-version }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Add General Registry
-        shell: julia --color=yes {0}
-        run: |
-          using Pkg
-          # Pkg.Registry.add("General")
-          Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-          Pkg.Registry.update()
-          Pkg.Registry.status()
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
+      # - name: Add General Registry
+      #   shell: julia --color=yes {0}
+      #   run: |
+      #     using Pkg
+      #     # Pkg.Registry.add("General")
+      #     Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
+      #     Pkg.Registry.update()
+      #     Pkg.Registry.status()
+      #   # env:
+      #   #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: Install juliapkg and add latest version of OpenMDAOCore.jl
         run: |
           echo "PWD = $PWD"
