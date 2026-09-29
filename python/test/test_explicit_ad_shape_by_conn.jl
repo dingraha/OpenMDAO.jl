@@ -2,6 +2,7 @@ using ADTypes: ADTypes
 using ComponentArrays: ComponentVector
 using ForwardDiff: ForwardDiff
 using SparseMatrixColorings: SparseMatrixColorings
+using SparseArrays: SparseArrays
 using OpenMDAOCore: OpenMDAOCore
 
 my_reverse(x::Number) = x
