@@ -33,8 +33,8 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: OpenMDAOCore.jl Tests
         shell: julia --color=yes {0}
         run: |
@@ -42,8 +42,8 @@ jobs:
           Pkg.activate("./julia/OpenMDAOCore.jl")
           Pkg.update()
           Pkg.test()
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
 
   OpenMDAO_jl:
     name: Julia ${{ matrix.julia-version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -68,8 +68,8 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: OpenMDAO.jl Tests
         shell: julia --color=yes {0}
         run: |
@@ -82,8 +82,8 @@ jobs:
           Pkg.instantiate()
           Pkg.update()
           Pkg.test()
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
 
   omjlcomps:
     name: Python ${{ matrix.python-version }} - ${{ matrix.os }} - ${{ github.event_name }}
@@ -135,8 +135,8 @@ jobs:
           echo "PWD = $PWD"
           pip install --config-settings editable_mode=compat -e ./python[test]
           python -c "import juliapkg; juliapkg.resolve()"
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: omjlcomps tests
         run: |
           echo "PWD = $PWD"
@@ -144,8 +144,8 @@ jobs:
           python ./python/test/test_julia_implicit_comp.py
           python ./python/test/test_aviary_support.py
           python ./python/test/test_explicit_ad_shape_by_conn.py
-        env:
-              JULIA_PKG_USE_CLI_GIT: 'true'
+        # env:
+        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: test examples
         run: |
           echo "PWD = $PWD"
