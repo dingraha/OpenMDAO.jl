@@ -156,7 +156,7 @@ nothing # hide
     The values of the entries in `X_ca` and `Y_ca` will be passed as initial values when creating the OpenMDAO `ExplicitComponent`.
     Depending on your application they may affect e.g. initial guesses for nonlinear solvers or determining the sparsity pattern of your `System`.
 
-Now we're almost ready to create the `ADExplicitComp (SparseFlavor)`.
+Now we're almost ready to create the `ADExplicitComp (DenseFlavor)`.
 The last step is to decide what AD library to use.
 OpenMDAOCore.jl relies on the [ADTypes.jl](https://github.com/SciML/ADTypes.jl) and DifferentiationInterface.jl packages for implementing the interface for calling the AD.
 Theoretically we can use any AD that those packages support.
@@ -171,7 +171,7 @@ nothing # hide
 Now we are finally ready to create the component:
 
 ```@example simple_auto_dense_forwarddiff_paraboloid
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.DenseFlavor(), ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.DenseFlavor(), ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
 parab_comp = make_component(comp)
 nothing # hide
 ```

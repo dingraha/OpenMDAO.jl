@@ -93,7 +93,7 @@ The `PerturbedDenseSparsityDetector` evaluates the Jacobian multiple times, pert
 Now we are finally ready to create the component:
 
 ```@example simple_auto_sparse_forwarddiff_paraboloid
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
 parab_comp = make_component(comp)
 nothing # hide
 ```
@@ -203,7 +203,7 @@ function f_arctan_yox!(Y, X, params)
 end
 Y_ca = ComponentVector(g=ones(SIZE))
 X_ca = ComponentVector(x=ones(SIZE), y=ones(SIZE))
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_arctan_yox!, Y_ca, X_ca)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_arctan_yox!, Y_ca, X_ca)
 arctan_yox_comp = make_component(comp)
 
 function f_circle!(Y, X, params)
@@ -221,7 +221,7 @@ function f_circle!(Y, X, params)
 end
 Y_ca = ComponentVector(area=[1.0]) # OpenMDAO currently doesn't handle scalar variables correctly sometimes. Fix will be in next release.
 X_ca = ComponentVector(r=[1.0]) # OpenMDAO currently doesn't handle scalar variables correctly sometimes. Fix will be in next release.
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_circle!, Y_ca, X_ca)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_circle!, Y_ca, X_ca)
 circle_comp = make_component(comp)
 
 function f_r_con!(Y, X, params)
@@ -238,7 +238,7 @@ function f_r_con!(Y, X, params)
 end
 Y_ca = ComponentVector(g=ones(SIZE))
 X_ca = ComponentVector(x=ones(SIZE), y=ones(SIZE), r=[1.0]) # OpenMDAO currently doesn't handle scalar variables correctly sometimes. Fix will be in next release.
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_r_con!, Y_ca, X_ca)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_r_con!, Y_ca, X_ca)
 r_con_comp = make_component(comp)
 
 nothing # hide
@@ -297,7 +297,7 @@ end
 Y_ca = ComponentVector(g=ones(SIZE))
 X_ca = ComponentVector(x=ones(SIZE))
 params_theta_con = (theta_min=0.0, theta_max=pi/4)
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_theta_con!, Y_ca, X_ca; params=params_theta_con)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_theta_con!, Y_ca, X_ca; params=params_theta_con)
 theta_con_comp = make_component(comp)
 nothing # hide
 ```
@@ -335,7 +335,7 @@ function f_delta_theta_con!(Y, X, params)
 end
 Y_ca = ComponentVector(g=ones(SIZE÷2))
 X_ca = ComponentVector(even=ones(SIZE÷2), odd=ones(SIZE÷2))
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_delta_theta_con!, Y_ca, X_ca)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_delta_theta_con!, Y_ca, X_ca)
 delta_theta_con_comp = make_component(comp)
 
 function f_l_conx!(Y, X, params)
@@ -352,7 +352,7 @@ function f_l_conx!(Y, X, params)
 end
 Y_ca = ComponentVector(g=ones(SIZE))
 X_ca = ComponentVector(x=ones(SIZE))
-comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_l_conx!, Y_ca, X_ca)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f_l_conx!, Y_ca, X_ca)
 l_conx_comp = make_component(comp)
 
 nothing # hide
@@ -524,7 +524,7 @@ function brachistochrone_ode_factory(; num_nodes, static_gravity)
     coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
     ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
 
-    return make_component(OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, brachistochrone_ode!, Y_ca, X_ca; units_dict=units_dict, tags_dict=tags_dict))
+    return make_component(OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, brachistochrone_ode!, Y_ca, X_ca; units_dict=units_dict, tags_dict=tags_dict))
 end
 nothing # hide
 ```
@@ -734,7 +734,7 @@ function brachistochrone_ode_factory(; num_nodes, static_gravity)
     coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
     ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
 
-    return make_component(OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, brachistochrone_ode, X_ca; units_dict=units_dict, tags_dict=tags_dict))
+    return make_component(OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, brachistochrone_ode, X_ca; units_dict=units_dict, tags_dict=tags_dict))
 end
 nothing # hide
 ```
