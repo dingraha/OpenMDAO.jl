@@ -40,9 +40,9 @@ function get_matrix_free_test_comp(; in_place)
     copy_shape_dict = Dict(:y=>:x, :z=>:x)
     if in_place
         Y_ca = ComponentVector{Float64}(y=0.0, z=0.0)
-        comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.MatrixFreeForwardFlavor(), ad_backend, f1!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+        comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.MatrixFreeForwardFlavor(), ad_backend, f1!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
     else
-        comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.MatrixFreeForwardFlavor(), ad_backend, f1, X_ca; shape_by_conn_dict, copy_shape_dict)
+        comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.MatrixFreeForwardFlavor(), ad_backend, f1, X_ca; shape_by_conn_dict, copy_shape_dict)
     end
 
     return comp
@@ -59,9 +59,9 @@ function get_sparse_test_comp(; in_place)
     copy_shape_dict = Dict(:y=>:x, :z=>:x)
     if in_place
         Y_ca = ComponentVector{Float64}(y=0.0, z=0.0)
-        comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f1!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+        comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f1!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
     else
-        comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f1, X_ca; shape_by_conn_dict, copy_shape_dict)
+        comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.SparseFlavor(), ad_backend, f1, X_ca; shape_by_conn_dict, copy_shape_dict)
     end
 
     return comp
