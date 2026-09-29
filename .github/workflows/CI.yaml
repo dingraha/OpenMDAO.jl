@@ -126,7 +126,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install juliapkg'[cli]'
           cat ./julia/OpenMDAOCore.jl/Project.toml
-          python -m juliapkg add --dev --path=./julia/OpenMDAOCore.jl OpenMDAOCore
+          python -m juliapkg add --dev OpenMDAOCore --path=./julia/OpenMDAOCore.jl
       - name: omjlcomps install
         run: |
           echo "PWD = $PWD"
