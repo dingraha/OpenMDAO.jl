@@ -115,8 +115,9 @@ jobs:
         shell: julia --color=yes {0}
         run: |
           using Pkg
-          Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
+          Pkg.Registry.add("General")
           Pkg.Registry.update()
+          Pkg.Registry.status()
         # env:
         #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: Install juliapkg and add latest version of OpenMDAOCore.jl
