@@ -127,7 +127,7 @@ jobs:
           echo "PWD = $PWD"
           # Get the json file with all the test dependencies, and that will install the local version of OpenMDAOCore.jl.
           # cp $PWD/python/omjlcomps/test/juliapkg-test.json $PWD/python/omjlcomps/juliapkg.json
-          cp $PWD/python/test/juliapkg-test.json $PWD/python/test/juliapkg.json
+          cp $PWD/python/test/juliapkg-test.json $PWD/python/omjlcomps/juliapkg.json
           python -m pip install --upgrade pip
           pip install juliapkg'[cli]'
           python -m juliapkg resolve
