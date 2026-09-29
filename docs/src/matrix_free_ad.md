@@ -9,10 +9,10 @@ The resulting components will use the [OpenMDAO Matrix-Free API](https://openmda
 ## The User-Defined Function for Matrix-Free AD
 The requirements for the user-defined function for the matrix-free AD functionality is identical to those for [Automatic Dense AD](@ref) and [Automatic Sparse AD](@ref), and the interface is much the same, as well.
 We'll still need to provide a function that expects a `ComponentVector` for its input, and either write its outputs to a `ComponentVector` (for the in-place form) or return a `ComponentVector` with outputs (for the out-of-place form).
-The only significant difference is that users will create a `MatrixFreeADExplicitComp` instead of a `SparseADExplicitComp`.
+The only significant difference is that users will create a `ADExplicitComp (MatrixFreeFlavor)` instead of a `ADExplicitComp (SparseFlavor)`.
 
-## `MatrixFreeADExplicitComp` Paraboloid 
-Let's do the good old Paraboloid example yet again, this time with the `MatrixFreeADExplicitComp`.
+## `ADExplicitComp (MatrixFreeFlavor)` Paraboloid 
+Let's do the good old Paraboloid example yet again, this time with the `ADExplicitComp (MatrixFreeFlavor)`.
 We'll load the same packages as we did for the sparse AD example (except we don't need `SparseMatrixColorings` since we won't be doing sparsity):
 
 ```@example matrix_free_paraboloid
@@ -66,12 +66,12 @@ nothing # hide
 Now we can create the component:
 
 ```@example matrix_free_paraboloid
-comp = OpenMDAOCore.MatrixFreeADExplicitComp(ad_backend, f_paraboloid, X_ca)
+comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.MatrixFreeForwardFlavor(), ad_backend, f_paraboloid, X_ca)
 parab_comp = make_component(comp)
 nothing # hide
 ```
 
-As before, `make_component` will convert the `MatrixFreeADExplicitComp` into a OpenMDAO Python component that we can use with OpenMDAO.
+As before, `make_component` will convert the `ADExplicitComp (MatrixFreeFlavor)` into a OpenMDAO Python component that we can use with OpenMDAO.
 So now we just need to proceed with the paraboloid example as usual.
 But!
 We need to make sure to [tell OpenMDAO that we need to calculate total derivatives in reverse mode](https://openmdao.org/newdocs/versions/latest/features/core_features/working_with_derivatives/picking_mode.html), not forward, since we're using reverse AD for our paraboloid component.

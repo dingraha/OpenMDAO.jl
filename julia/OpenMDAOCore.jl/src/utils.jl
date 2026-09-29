@@ -118,6 +118,10 @@ function ca2strdict(ca::ComponentMatrix)
     return Dict((string(rname), string(cname))=>_at_least_2d(ca[rname, cname]) for rname in keys(raxis), cname in keys(caxis))
 end
 
+# Moving this to the sparse extension.
+function ca2strdict_sparse end
+function _get_rows_cols_dict_from_sparsity end 
+
 function rcdict2strdict(::Type{T}, rcdict) where {T}
     out = Dict{Tuple{String,String}, Vector{T}}()
     for (output_name, input_name) in keys(rcdict)
@@ -154,4 +158,93 @@ function _resize_component_vector(X_ca, sizes)
     end
     nt = NamedTuple{tuple(ks...)}(tuple(vals...))
     return ComponentVector(nt)
+end
+
+# ---------------------------------------------------------------------------
+# PerturbedDenseSparsityDetector
+#
+# The *type* (struct + `show` + constructor) is declared here in the main
+# package so it can be imported without the extension loaded. Only the
+# sparsity-detection *methods* (`ADTypes.jacobian_sparsity`/
+# `hessian_sparsity`/`jacobian_sparsity!`) require `SparseArrays` and live in the
+# `OpenMDAOCoreSparseMatrixColoringsExt` extension.
+# ---------------------------------------------------------------------------
+
+"""
+    PerturbedDenseSparsityDetector
+
+Tweaked version of [`DenseSparsityDetector`](https://gdalle.github.io/DifferentiationInterface.jl/DifferentiationInterface/stable/api/#DifferentiationInterface.DenseSparsityDetector) sparsity pattern detector satisfying the [detection API](https://sciml.github.io/ADTypes.jl/stable/#Sparse-AD) of [ADTypes.jl](https://github.com/SciML/ADTypes.jl) that evaluates the Jacobian multiple times using a perturbed input vector.
+Specifically, input vector `x` will be perturbed via
+
+```julia
+    x_perturb = (1 .+ rel_x_perturb.*perturb1).*x .+ perturb2.*abs_x_perturb
+```
+
+where `perturb1` and `perturb2` are random `Vector`s of numbers ranging from `-0.5` to `0.5`, and `rel_x_perturb` and `abs_x_perturb` are relative and absolute perturbation magnitudes specified by the user.
+
+All of the caveats associated with the performance of `DenseSparsityDetector` apply to `PerturbedDenseSparsityDetector`, since it essentially does the same thing as `DenseSparsityDetector` multiple times.
+The nonzeros in a Jacobian or Hessian are detected by computing the relevant matrix with _dense_ AD, and thresholding the entries with a given tolerance (which can be numerically inaccurate).
+This process can be very slow, and should only be used if its output can be exploited multiple times to compute many sparse matrices.
+
+!!! danger
+    In general, the sparsity pattern you obtain can depend on the provided input `x`. If you want to reuse the pattern, make sure that it is input-agnostic.
+    Perturbing the input vector should hopefully guard against getting "unlucky" and finding zero Jacobian entries that aren't actually zero for all `x`, but is of course problem-dependent.
+
+# Fields
+
+- `backend::AbstractADType` is the dense AD backend used under the hood
+- `atol::Float64` is the minimum magnitude of a matrix entry to be considered nonzero
+- `nevals::Int=3` is the number of times the Jacobian will be evaluated using the perturbed input `x`
+- `rel_x_perturb=0.001`: is the relative magnitude of the `x` perturbation.
+
+# Constructor
+
+    PerturbedDenseSparsityDetector(backend; atol, method=:iterative, nevals=3, rel_x_perturb=0.001, abs_x_perturb=0.0001)
+
+The keyword argument `method::Symbol` can be either:
+
+- `:iterative`: compute the matrix in a sequence of matrix-vector products (memory-efficient)
+- `:direct`: compute the matrix all at once (memory-hungry but sometimes faster).
+
+Note that the constructor is type-unstable because `method` ends up being a type parameter of the `PerturbedDenseSparsityDetector` object (this is not part of the API and might change).
+
+"""
+struct PerturbedDenseSparsityDetector{method,B,TRelXPerturb,TAbsXPerturb} <: ADTypes.AbstractSparsityDetector
+    backend::B
+    atol::Float64
+    nevals::Int
+    rel_x_perturb::TRelXPerturb
+    abs_x_perturb::TAbsXPerturb
+end
+
+function Base.show(io::IO, detector::PerturbedDenseSparsityDetector{method}) where {method}
+    (; backend, atol, nevals, rel_x_perturb, abs_x_perturb) = detector
+    return print(
+        io,
+        PerturbedDenseSparsityDetector,
+        "(",
+        repr(backend; context=io),
+        "; atol=$atol, method=",
+        repr(method; context=io),
+        "nevals=$nevals, rel_x_perturb=$rel_x_perturb", "abs_x_perturb=$abs_x_perturb",
+        ")",
+    )
+end
+
+function PerturbedDenseSparsityDetector(
+    backend::ADTypes.AbstractADType; atol::Float64, method::Symbol=:iterative, nevals=3, rel_x_perturb=0.001, abs_x_perturb=0.0001
+)
+    if !(method in (:iterative, :direct))
+        throw(
+            ArgumentError("The keyword `method` must be either `:iterative` or `:direct`.")
+        )
+    end
+
+    if nevals < 1
+        throw(
+            ArgumentError("The keyword `nevals` should be > 0")
+        )
+    end
+
+    return PerturbedDenseSparsityDetector{method,typeof(backend),typeof(rel_x_perturb),typeof(abs_x_perturb)}(backend, atol, nevals, rel_x_perturb, abs_x_perturb)
 end

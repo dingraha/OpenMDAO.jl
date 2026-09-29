@@ -7,24 +7,16 @@ using SparseArrays: sparse, findnz, nonzeros, AbstractSparseArray
 using SparseMatrixColorings: SparseMatrixColorings
 using Random: rand!
 
-# Bring in names from the parent module so the sparse methods can hook into the
-# existing interface. These are either exported (available via `using`) or
-# accessed qualified for the non-exported helpers.
-using OpenMDAOCore: OpenMDAOCore,
-    AbstractADExplicitComp, AbstractExplicitComp,
-    get_callback, get_input_ca, get_output_ca, get_prep, get_backend, get_units,
-    VarData, PartialsData,
-    get_rows_cols, get_rows_cols_dict, ca2strdict, rcdict2strdict,
-    _maybe_nonzeros
+using OpenMDAOCore: OpenMDAOCore
 
 # Sparse-specific utilities --------------------------------------------------
 
 """
-    get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
+    _get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
 
 Get a `Dict` of the non-zero row and column indices for a sparsity pattern defined by a `ComponentMatrix` representation of a Jacobian.
 """
-function get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
+function OpenMDAOCore._get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
     rcdict = Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}()
     raxis, caxis = getaxes(J)
     for input_name in keys(caxis)
@@ -55,7 +47,7 @@ function get_rows_cols_dict_from_sparsity(J::ComponentMatrix)
     return rcdict
 end
 
-function ca2strdict_sparse(ca::ComponentMatrix)
+function OpenMDAOCore.ca2strdict_sparse(ca::ComponentMatrix)
     T = eltype(ca)
     raxis, caxis = getaxes(ca)
     out = Dict{Tuple{String,String}, Vector{T}}()
@@ -302,18 +294,19 @@ function ADTypes.hessian_sparsity(f, x, detector::OpenMDAOCore.PerturbedDenseSpa
     return sparse(I, J, ones(Bool, length(I)), n, n)
 end
 
-# SparseADExplicitComp -------------------------------------------------------
+# ADExplicitComp{SparseFlavor} ------------------------------------------------
 
-# `SparseADExplicitComp` *type* (struct + inner constructors + trivial field
-# accessors) is declared in the parent `OpenMDAOCore` module so it can be
-# imported without the extension loaded. Only the outer constructors and the
+# The `ADExplicitComp{SparseFlavor, ...}` *type* and the shared accessors
+# (`get_jacobian_ca`, `get_rows_cols_dict`, `has_*`) are declared in the parent
+# `OpenMDAOCore` module (in `abstract_ad.jl`) so they can be imported without
+# the extension loaded. Only the `SparseFlavor` constructors and the
 # `compute_partials!`/`setup_partials`/`update_prep`/`get_partials_data` methods
 # below require `SparseArrays`/`SparseMatrixColorings` and stay here.
 
 """
-    SparseADExplicitComp(ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+    ADExplicitComp(::SparseFlavor, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
 
-Create a `SparseADExplicitComp` from a user-defined function and output and input `ComponentVector`s.
+Create an in-place [`SparseFlavor`](@ref) [`ADExplicitComp`](@ref).
 
 # Positional Arguments
 * `ad_backend`: `<:ADTypes.AutoSparse` automatic differentation "backend" library
@@ -327,9 +320,9 @@ Create a `SparseADExplicitComp` from a user-defined function and output and inpu
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep!`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
 """
-function OpenMDAOCore.SparseADExplicitComp(ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
     # Create a new user-defined function that captures the `params` argument.
     # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
@@ -342,20 +335,24 @@ function OpenMDAOCore.SparseADExplicitComp(ad_backend::TAD, f!, Y_ca::ComponentV
 
     # Get the prep-related stuff.
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
-        prep, J_ca_sparse, rcdict, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, Y_ca, X_ca)
+        deriv_prep, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, Y_ca, X_ca)
     else
         # No point in getting a "good" prep when we don't know all the shapes.
-        prep = J_ca_sparse = X_ca_cs = Y_ca_cs = nothing
+        J_ca_sparse = nothing
+        prep = nothing
         rcdict = Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}()
+        deriv_prep = OpenMDAOCore.SparseDerivPrep(J_ca_sparse, prep, rcdict)
+        X_ca_cs = Y_ca_cs = nothing
     end
 
-    return OpenMDAOCore.SparseADExplicitComp{true}(ad_backend, compute_adable, X_ca, Y_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
+    return OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+        units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
 """
-    SparseADExplicitComp(ad_backend, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+    ADExplicitComp(::SparseFlavor, ad_backend, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
 
-Create a `SparseADExplicitComp` from a user-defined function and output and input `ComponentVector`s.
+Create an out-of-place [`SparseFlavor`](@ref) [`ADExplicitComp`](@ref).
 
 # Positional Arguments
 * `ad_backend`: `<:ADTypes.AutoSparse` automatic differentation "backend" library
@@ -368,9 +365,9 @@ Create a `SparseADExplicitComp` from a user-defined function and output and inpu
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep!`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
 """
-function OpenMDAOCore.SparseADExplicitComp(ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
     # Create a new user-defined function that captures the `params` argument.
     # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
@@ -384,13 +381,18 @@ function OpenMDAOCore.SparseADExplicitComp(ad_backend::TAD, f, X_ca::ComponentVe
 
     # Get the prep-related stuff.
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
-        prep, J_ca_sparse, rcdict, X_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, X_ca)
+        deriv_prep, X_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, X_ca)
     else
-        prep = J_ca_sparse = X_ca_cs = nothing
+        J_ca_sparse = nothing
+        prep = nothing
         rcdict = Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}()
+        deriv_prep = OpenMDAOCore.SparseDerivPrep(J_ca_sparse, prep, rcdict)
+        X_ca_cs = nothing
     end
 
-    return OpenMDAOCore.SparseADExplicitComp{false}(ad_backend, compute_adable, X_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs)
+    Y_ca_cs = nothing
+    return OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+        units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
 function _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
@@ -404,13 +406,13 @@ function _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
     J_ca_sparse = ComponentMatrix(J_sparse, (only(getaxes(Y_ca,)), only(getaxes(X_ca))))
 
     # Get a dictionary describing the non-zero rows and cols for each subjacobian.
-    rcdict = get_rows_cols_dict_from_sparsity(J_ca_sparse)
+    rcdict = OpenMDAOCore._get_rows_cols_dict_from_sparsity(J_ca_sparse)
 
     # Create complex-valued versions of the X_ca_full and Y_ca_full arrays.
     X_ca_cs = similar(X_ca, ComplexF64)
     Y_ca_cs = similar(Y_ca, ComplexF64)
 
-    return prep, J_ca_sparse, rcdict, X_ca_cs, Y_ca_cs
+    return OpenMDAOCore.SparseDerivPrep(J_ca_sparse, prep, rcdict), X_ca_cs, Y_ca_cs
 end
 
 function _get_sparse_prep_stuff(ad_backend, f, X_ca)
@@ -427,60 +429,50 @@ function _get_sparse_prep_stuff(ad_backend, f, X_ca)
     J_ca_sparse = ComponentMatrix(J_sparse, (only(getaxes(Y_ca,)), only(getaxes(X_ca))))
 
     # Get a dictionary describing the non-zero rows and cols for each subjacobian.
-    rcdict = get_rows_cols_dict_from_sparsity(J_ca_sparse)
+    rcdict = OpenMDAOCore._get_rows_cols_dict_from_sparsity(J_ca_sparse)
 
     # Create complex-valued versions of the X_ca_full and Y_ca_full arrays.
     X_ca_cs = similar(X_ca, ComplexF64)
 
-    return prep, J_ca_sparse, rcdict, X_ca_cs
+    return OpenMDAOCore.SparseDerivPrep(J_ca_sparse, prep, rcdict), X_ca_cs
 end
 
-function OpenMDAOCore.update_prep(self::OpenMDAOCore.SparseADExplicitComp{true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
 
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
-        X_ca_old = get_input_ca(self)
-        Y_ca_old = get_output_ca(self)
+        X_ca_old = OpenMDAOCore.get_input_ca(self)
+        Y_ca_old = OpenMDAOCore.get_output_ca(self)
 
         # Create a new versions of `X_ca_old` that have the correct sizes and default values.
         X_ca = OpenMDAOCore._resize_component_vector(X_ca_old, input_sizes)
         Y_ca = OpenMDAOCore._resize_component_vector(Y_ca_old, output_sizes)
 
         # Get the new sparsity stuff.
-        ad_backend = get_backend(self)
-        f! = get_callback(self)
-        prep, J_ca_sparse, rcdict, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
+        ad_backend = OpenMDAOCore.get_backend(self)
+        f! = OpenMDAOCore.get_callback(self)
+        deriv_prep, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
 
-        # Now just copy things over.
-        units_dict = self.units_dict
-        tags_dict = self.tags_dict
-        shape_by_conn_dict = self.shape_by_conn_dict
-        copy_shape_dict = self.copy_shape_dict
-
-        self = OpenMDAOCore.SparseADExplicitComp{true}(ad_backend, f!, X_ca, Y_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
+        self = OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, f!, X_ca, Y_ca, deriv_prep,
+            self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, Y_ca_cs)
     end
 
     return self
 end
 
-function OpenMDAOCore.update_prep(self::OpenMDAOCore.SparseADExplicitComp{false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
 
     if length(input_sizes) > 0
-        X_ca_old = get_input_ca(self)
+        X_ca_old = OpenMDAOCore.get_input_ca(self)
 
         X_ca = OpenMDAOCore._resize_component_vector(X_ca_old, input_sizes)
 
         # Get the new sparsity stuff.
-        ad_backend = get_backend(self)
-        f = get_callback(self)
-        prep, J_ca_sparse, rcdict, X_ca_cs = _get_sparse_prep_stuff(ad_backend, f, X_ca)
+        ad_backend = OpenMDAOCore.get_backend(self)
+        f = OpenMDAOCore.get_callback(self)
+        deriv_prep, X_ca_cs = _get_sparse_prep_stuff(ad_backend, f, X_ca)
 
-        # Now just copy things over.
-        units_dict = self.units_dict
-        tags_dict = self.tags_dict
-        shape_by_conn_dict = self.shape_by_conn_dict
-        copy_shape_dict = self.copy_shape_dict
-
-        self = OpenMDAOCore.SparseADExplicitComp{false}(ad_backend, f, X_ca, J_ca_sparse, prep, rcdict, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs)
+        self = OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, f, X_ca, nothing, deriv_prep,
+            self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, nothing)
     end
 
     return self
@@ -501,11 +493,11 @@ function  _get_py_indices(shape)
     return view(idx_non_flat, :)
 end
 
-function OpenMDAOCore.get_partials_data(self::OpenMDAOCore.SparseADExplicitComp)
-    rcdict = get_rows_cols_dict(self)
-    partials_data = Vector{PartialsData}()
-    X_ca = get_input_ca(self)
-    Y_ca = get_output_ca(self)
+function OpenMDAOCore.get_partials_data(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor})
+    rcdict = OpenMDAOCore.get_rows_cols_dict(self)
+    partials_data = Vector{OpenMDAOCore.PartialsData}()
+    X_ca = OpenMDAOCore.get_input_ca(self)
+    Y_ca = OpenMDAOCore.get_output_ca(self)
     for (output_name, input_name) in keys(rcdict)
         rows, cols = rcdict[output_name, input_name]
 
@@ -517,13 +509,13 @@ function OpenMDAOCore.get_partials_data(self::OpenMDAOCore.SparseADExplicitComp)
         cols0based = getindex.(Ref(input_idx_py), cols)
         rows0based = getindex.(Ref(output_idx_py), rows)
 
-        push!(partials_data, PartialsData(string(output_name), string(input_name); rows=rows0based, cols=cols0based))
+        push!(partials_data, OpenMDAOCore.PartialsData(string(output_name), string(input_name); rows=rows0based, cols=cols0based))
     end
 
     return partials_data
 end
 
-function OpenMDAOCore.setup_partials(self::OpenMDAOCore.SparseADExplicitComp, input_sizes, output_sizes)
+function OpenMDAOCore.setup_partials(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor}, input_sizes, output_sizes)
 
     input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
     output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
@@ -534,25 +526,25 @@ function OpenMDAOCore.setup_partials(self::OpenMDAOCore.SparseADExplicitComp, in
     return self_new, OpenMDAOCore.get_partials_data(self_new)
 end
 
-function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{true}, inputs, partials)
+function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}, inputs, partials)
     # Copy the inputs into the input `ComponentArray`.
-    X_ca = get_input_ca(self)
+    X_ca = OpenMDAOCore.get_input_ca(self)
     for iname in keys(X_ca)
         # This works even if `X_ca[iname]` is a scalar, because of the `@view`!
         @view(X_ca[iname]) .= inputs[string(iname)]
     end
 
     # Get the Jacobian.
-    f! = get_callback(self)
-    Y_ca = get_output_ca(self)
+    f! = OpenMDAOCore.get_callback(self)
+    Y_ca = OpenMDAOCore.get_output_ca(self)
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
-    prep = get_prep(self)
-    ad_backend = get_backend(self)
+    prep = OpenMDAOCore.get_prep(self)
+    ad_backend = OpenMDAOCore.get_backend(self)
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
     raxis, caxis = getaxes(J_ca_sparse)
-    rcdict = get_rows_cols_dict(self)
+    rcdict = OpenMDAOCore.get_rows_cols_dict(self)
     for oname in keys(raxis)
         for iname in keys(caxis)
             # Grab the subjacobian we're interested in.
@@ -576,7 +568,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{
                 end
             else
                 # This will get a vector of the non-zero entries of the sparse sub-Jacobian if it's actually sparse, or just a reference to the flattened vector of the dense sub-Jacobian otherwise.
-                Jsub_out_vec = _maybe_nonzeros(Jsub_out)
+                Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
 
                 # Now write the non-zero entries to Jsub_out_vec.
                 Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
@@ -588,24 +580,24 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{
     return nothing
 end
 
-function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{false}, inputs, partials)
+function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}, inputs, partials)
     # Copy the inputs into the input `ComponentArray`.
-    X_ca = get_input_ca(self)
+    X_ca = OpenMDAOCore.get_input_ca(self)
     for iname in keys(X_ca)
         # This works even if `X_ca[iname]` is a scalar, because of the `@view`!
         @view(X_ca[iname]) .= inputs[string(iname)]
     end
 
     # Get the Jacobian.
-    f = get_callback(self)
+    f = OpenMDAOCore.get_callback(self)
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
-    prep = get_prep(self)
-    ad_backend = get_backend(self)
+    prep = OpenMDAOCore.get_prep(self)
+    ad_backend = OpenMDAOCore.get_backend(self)
     DifferentiationInterface.jacobian!(f, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
     raxis, caxis = getaxes(J_ca_sparse)
-    rcdict = get_rows_cols_dict(self)
+    rcdict = OpenMDAOCore.get_rows_cols_dict(self)
     for oname in keys(raxis)
         for iname in keys(caxis)
             # Grab the subjacobian we're interested in.
@@ -629,7 +621,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{
                 end
             else
                 # This will get a vector of the non-zero entries of the sparse sub-Jacobian if it's actually sparse, or just a reference to the flattened vector of the dense sub-Jacobian otherwise.
-                Jsub_out_vec = _maybe_nonzeros(Jsub_out)
+                Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
 
                 # Now write the non-zero entries to Jsub_out_vec.
                 Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
@@ -639,7 +631,5 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.SparseADExplicitComp{
 
     return nothing
 end
-
-export get_rows_cols_dict_from_sparsity, ca2strdict_sparse
 
 end # module

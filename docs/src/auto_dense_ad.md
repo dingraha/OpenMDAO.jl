@@ -15,7 +15,7 @@ This page will describe the first and simplest approach (dense AD), with the nex
 ## The User-Defined Function
 The interface for the AD functionality in OpenMDAO.jl is a bit different from the "plain" `AbstractExplicitComp` and `AbstractImplicitComp` `struct`s described in earlier examples (see [A Simple Example: Optimizing a Paraboloid](@ref) or [A More Complicated Example: Nonlinear Circuit](@ref)).
 Instead of creating subtypes of `AbstractExplicitComp` that implement `OpenMDAOCore.setup`, `OpenMDAOCore.compute!`, etc., we'll be writing a Julia function that performs our desired computation.
-This user-defined function will then be passed to a constructor of the `DenseADExplicitComp` `struct`, which will implement the necessary `OpenMDAOCore` methods for us.
+This user-defined function will then be passed to a constructor of the `ADExplicitComp (DenseFlavor)` `struct`, which will implement the necessary `OpenMDAOCore` methods for us.
 (The same user-defined function can also be used for the sparse AD and matrix-free AD approaches, making it relatively simple to try all three out to see what's fastest!)
 
 The user-defined function *must* follow one of two forms: either it can be an "in-place" function that writes its outputs to an output vector, or it can be an "out-of-place" function that returns a single output vector.
@@ -88,9 +88,9 @@ Y_ca = ComponentVector(f_xy=0.0)
 nothing # hide
 ```
 
-Actually, why don't we try to implement the `Paraboloid` component using a `DenseADExplicitComp`?
+Actually, why don't we try to implement the `Paraboloid` component using a `ADExplicitComp (DenseFlavor)`?
 
-## `DenseADExplicitComp` Paraboloid 
+## `ADExplicitComp (DenseFlavor)` Paraboloid 
 We'll start fresh, first with importing the stuff we'll need:
 
 ```@example simple_auto_dense_forwarddiff_paraboloid
@@ -139,8 +139,8 @@ nothing # hide
     This creates a view into the original `ComponentVector`, instead of a new array with a copy of the original data, which avoids unnecessary allocations and (for the outputs) allows modifications to the view to be reflected in the `Y_ca` array.
     In this example everything is a scalar, so no allocations would have happened anyway.
     But it doesn't hurt to use `@view`: it's a good habit to get into, *and* it allows us to use the `@.` [broadcasting](https://docs.julialang.org/en/v1/manual/arrays/#Broadcasting) macro with the scalar `f_xy` output.
-  * The `params` argument is not used in this example, but it is still required, since the `DenseADExplicitComp` constructor will expect the function to accept it.
-    Also needed for `SparseADExplicitComp` and `MatrixFreeADExplicitComp`.
+  * The `params` argument is not used in this example, but it is still required, since the `ADExplicitComp (DenseFlavor)` constructor will expect the function to accept it.
+    Also needed for `ADExplicitComp (SparseFlavor)` and `ADExplicitComp (MatrixFreeFlavor)`.
 
 Our next step is to create the `ComponentVector`s that will be used to hold the inputs and outputs:
 
@@ -156,7 +156,7 @@ nothing # hide
     The values of the entries in `X_ca` and `Y_ca` will be passed as initial values when creating the OpenMDAO `ExplicitComponent`.
     Depending on your application they may affect e.g. initial guesses for nonlinear solvers or determining the sparsity pattern of your `System`.
 
-Now we're almost ready to create the `SparseADExplicitComp`.
+Now we're almost ready to create the `ADExplicitComp (SparseFlavor)`.
 The last step is to decide what AD library to use.
 OpenMDAOCore.jl relies on the [ADTypes.jl](https://github.com/SciML/ADTypes.jl) and DifferentiationInterface.jl packages for implementing the interface for calling the AD.
 Theoretically we can use any AD that those packages support.
@@ -171,12 +171,12 @@ nothing # hide
 Now we are finally ready to create the component:
 
 ```@example simple_auto_dense_forwarddiff_paraboloid
-comp = OpenMDAOCore.DenseADExplicitComp(ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
+comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.DenseFlavor(), ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
 parab_comp = make_component(comp)
 nothing # hide
 ```
 
-`make_component` will convert the `DenseADExplicitComp` into a OpenMDAO Python component that we can use with OpenMDAO.
+`make_component` will convert the `ADExplicitComp (DenseFlavor)` into a OpenMDAO Python component that we can use with OpenMDAO.
 So now we just need to proceed with the paraboloid example as usual:
 
 ```@example simple_auto_dense_forwarddiff_paraboloid

@@ -2,12 +2,11 @@
 
 # Load the weakdeps BEFORE `OpenMDAOCore` so that the
 # `OpenMDAOCoreSparseMatrixColoringsExt` extension is triggered when
-# `OpenMDAOCore` loads. The extension defines `SparseADExplicitComp`,
-# `get_rows_cols_dict`, `get_rows_cols_dict_from_sparsity`, `ca2strdict_sparse`,
-# and `PerturbedDenseSparsityDetector`, which are then re-exported by
-# `OpenMDAOCore`. If these are loaded after `OpenMDAOCore`, the extension never
-# triggers and the names are unavailable (see the "Imported binding ... was
-# undeclared at import time" warnings).
+# `OpenMDAOCore` loads. The extension provides the `SparseFlavor` constructors
+# and `get_rows_cols_dict_from_sparsity`/`ca2strdict_sparse`, which are then
+# re-exported by `OpenMDAOCore`. If these are loaded after `OpenMDAOCore`, the
+# extension never triggers and the names are unavailable (see the "Imported
+# binding ... was undeclared at import time" warnings).
 using SparseArrays: sparse, findnz, nnz, issparse
 using SparseMatrixColorings: SparseMatrixColorings
 using OpenMDAOCore: OpenMDAOCore
@@ -23,7 +22,8 @@ using Zygote: Zygote
 # Bring OpenMDAOCore exports into scope.
 using OpenMDAOCore: VarData, PartialsData,
     AbstractComp, AbstractExplicitComp, AbstractImplicitComp,
-    DenseADExplicitComp, SparseADExplicitComp, MatrixFreeADExplicitComp,
+    ADExplicitComp,
+    DenseFlavor, SparseFlavor, MatrixFreeForwardFlavor, MatrixFreeReverseFlavor,
     get_input_ca, get_output_ca, get_jacobian_ca, get_jacobian_ca,
     get_rows_cols, get_rows_cols_dict, get_rows_cols_dict_from_sparsity,
     get_dinput_ca, get_doutput_ca,
@@ -122,7 +122,7 @@ function do_compute_check(comp)
 end
 
 function do_compute_partials_check(comp)
-    sparse_jac = typeof(comp) <: SparseADExplicitComp
+    sparse_jac = typeof(comp) <: ADExplicitComp{SparseFlavor}
 
 
     inputs_dict = ca2strdict(get_input_ca(comp))
@@ -841,7 +841,7 @@ function doit_in_place(prep::AutoDenseTestPrep)
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
     # Now we can create the component.
-    comp = DenseADExplicitComp(ad_backend, f_simple!, Y_ca, X_ca; params=params)
+    comp = ADExplicitComp(DenseFlavor(), ad_backend, f_simple!, Y_ca, X_ca; params=params)
     # Do the checks.
     do_compute_check(comp)
     do_compute_partials_check(comp)
@@ -854,7 +854,7 @@ function doit_in_place(prep::AutoDenseShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
     # Now we can create the component.
-    comp = DenseADExplicitComp(ad_backend, f_simple_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = ADExplicitComp(DenseFlavor(), ad_backend, f_simple_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
     # Now set the size of b to the correct thing.
     N = prep.N
     M = prep.M
@@ -884,7 +884,7 @@ function doit_out_of_place(prep::AutoDenseTestPrep)
     X_ca = prep.X_ca
     ad_backend = prep.ad_backend
     # Now we can create the component.
-    comp = DenseADExplicitComp(ad_backend, f_simple, X_ca; params=params)
+    comp = ADExplicitComp(DenseFlavor(), ad_backend, f_simple, X_ca; params=params)
     do_compute_check(comp)
     do_compute_partials_check(comp)
 end
@@ -895,7 +895,7 @@ function doit_out_of_place(prep::AutoDenseShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
     # Now we can create the component.
-    comp = DenseADExplicitComp(ad_backend, f_simple, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = ADExplicitComp(DenseFlavor(), ad_backend, f_simple, X_ca; shape_by_conn_dict, copy_shape_dict)
     M = prep.M
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
@@ -997,7 +997,7 @@ function doit_in_place_forward(prep::AutoMatrixFreeTestPrep)
     X_ca = prep.X_ca
     params = (M, N)
     disable_prep = prep.disable_prep
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple!, Y_ca, X_ca; params, disable_prep)
+    comp = ADExplicitComp(MatrixFreeForwardFlavor(), ad_backend, f_simple!, Y_ca, X_ca; params, force_skip_prep=disable_prep)
     do_compute_check(comp)
     do_compute_jacvec_product_check_forward(comp)
 end
@@ -1008,7 +1008,7 @@ function doit_in_place_forward(prep::AutoMatrixFreeShapeByConnTestPrep)
     Y_ca = prep.Y_ca
     disable_prep = prep.disable_prep
     shape_by_conn_dict = prep.shape_by_conn_dict
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple_no_params!, Y_ca, X_ca; disable_prep, shape_by_conn_dict)
+    comp = ADExplicitComp(MatrixFreeForwardFlavor(), ad_backend, f_simple_no_params!, Y_ca, X_ca; force_skip_prep=disable_prep, shape_by_conn_dict)
     # Now set the size of b to the correct thing.
     M = prep.M
     N = prep.N
@@ -1041,7 +1041,7 @@ function doit_in_place_reverse(prep::AutoMatrixFreeTestPrep)
     X_ca = prep.X_ca
     params = (M, N)
     disable_prep = prep.disable_prep
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple!, Y_ca, X_ca; params, disable_prep)
+    comp = ADExplicitComp(MatrixFreeReverseFlavor(), ad_backend, f_simple!, Y_ca, X_ca; params, force_skip_prep=disable_prep)
     do_compute_check(comp)
     do_compute_jacvec_product_check_reverse(comp)
 end
@@ -1052,7 +1052,7 @@ function doit_in_place_reverse(prep::AutoMatrixFreeShapeByConnTestPrep)
     Y_ca = prep.Y_ca
     disable_prep = prep.disable_prep
     shape_by_conn_dict = prep.shape_by_conn_dict
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple_no_params!, Y_ca, X_ca; disable_prep, shape_by_conn_dict)
+    comp = ADExplicitComp(MatrixFreeReverseFlavor(), ad_backend, f_simple_no_params!, Y_ca, X_ca; force_skip_prep=disable_prep, shape_by_conn_dict)
     # Now set the size of b to the correct thing.
     M = prep.M
     N = prep.N
@@ -1085,7 +1085,7 @@ function doit_out_of_place_forward(prep::AutoMatrixFreeTestPrep)
     X_ca = prep.X_ca
     params = (M, N)
     disable_prep = prep.disable_prep
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple, X_ca; params, disable_prep)
+    comp = ADExplicitComp(MatrixFreeForwardFlavor(), ad_backend, f_simple, X_ca; params, force_skip_prep=disable_prep)
     do_compute_check(comp)
     do_compute_jacvec_product_check_forward(comp)
 end
@@ -1096,7 +1096,7 @@ function doit_out_of_place_forward(prep::AutoMatrixFreeShapeByConnTestPrep)
     # Y_ca = prep.Y_ca
     disable_prep = prep.disable_prep
     shape_by_conn_dict = prep.shape_by_conn_dict
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple, X_ca; disable_prep, shape_by_conn_dict)
+    comp = ADExplicitComp(MatrixFreeForwardFlavor(), ad_backend, f_simple, X_ca; force_skip_prep=disable_prep, shape_by_conn_dict)
     # Now set the size of b to the correct thing.
     M = prep.M
     N = prep.N
@@ -1129,7 +1129,7 @@ function doit_out_of_place_reverse(prep::AutoMatrixFreeTestPrep)
     X_ca = prep.X_ca
     params = (M, N)
     disable_prep = prep.disable_prep
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple, X_ca; params, disable_prep)
+    comp = ADExplicitComp(MatrixFreeReverseFlavor(), ad_backend, f_simple, X_ca; params, force_skip_prep=disable_prep)
     do_compute_check(comp)
     do_compute_jacvec_product_check_reverse(comp)
 end
@@ -1143,7 +1143,7 @@ function doit_out_of_place_reverse(prep::AutoMatrixFreeShapeByConnTestPrep)
     params = (M, N)
     disable_prep = prep.disable_prep
     shape_by_conn_dict = prep.shape_by_conn_dict
-    comp = MatrixFreeADExplicitComp(ad_backend, f_simple, X_ca; params, disable_prep, shape_by_conn_dict)
+    comp = ADExplicitComp(MatrixFreeReverseFlavor(), ad_backend, f_simple, X_ca; params, force_skip_prep=disable_prep, shape_by_conn_dict)
     M = prep.M
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
@@ -1286,7 +1286,7 @@ function doit_in_place(prep::AutosparseManualTestPrep)
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
     # Now we can create the component.
-    comp = SparseADExplicitComp(ad_backend, f_simple!, Y_ca, X_ca; params=params)
+    comp = ADExplicitComp(SparseFlavor(), ad_backend, f_simple!, Y_ca, X_ca; params=params)
     do_compute_check(comp)
     do_compute_partials_check(comp)
 end
@@ -1298,7 +1298,7 @@ function doit_out_of_place(prep::AutosparseManualTestPrep)
     J_ca = prep.J_ca
     ad_backend = prep.ad_backend
     # Now we can create the component.
-    comp = SparseADExplicitComp(ad_backend, f_simple, X_ca; params=params)
+    comp = ADExplicitComp(SparseFlavor(), ad_backend, f_simple, X_ca; params=params)
     do_compute_check(comp)
     do_compute_partials_check(comp)
 end
@@ -1395,7 +1395,7 @@ function doit_in_place(prep::AutosparseAutomaticTestPrep)
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = SparseADExplicitComp(ad_backend, f_simple!, Y_ca, X_ca; params=params)
+    comp = ADExplicitComp(SparseFlavor(), ad_backend, f_simple!, Y_ca, X_ca; params=params)
     do_compute_check(comp)
     do_compute_partials_check(comp)
 end
@@ -1407,7 +1407,7 @@ function doit_in_place(prep::AutosparseAutomaticShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
     # Now we can create the component.
-    comp = SparseADExplicitComp(ad_backend, f_simple_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = ADExplicitComp(SparseFlavor(), ad_backend, f_simple_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
     # Now set the size of b to the correct thing.
     N = prep.N
     M = prep.M
@@ -1423,7 +1423,7 @@ end
 function doit_out_of_place(prep::AutosparseAutomaticTestPrep)
     X_ca = prep.X_ca
     ad_backend = prep.ad_backend
-    comp = SparseADExplicitComp(ad_backend, f_simple, X_ca)
+    comp = ADExplicitComp(SparseFlavor(), ad_backend, f_simple, X_ca)
     do_compute_check(comp)
     do_compute_partials_check(comp)
     # Got exception outside of a @test
@@ -1447,7 +1447,7 @@ function doit_out_of_place(prep::AutosparseAutomaticShapeByConnTestPrep)
     ad_backend = prep.ad_backend
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
-    comp = SparseADExplicitComp(ad_backend, f_simple, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = ADExplicitComp(SparseFlavor(), ad_backend, f_simple, X_ca; shape_by_conn_dict, copy_shape_dict)
     M = prep.M
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))

@@ -2,7 +2,7 @@
 CurrentModule = OpenMDAODocs
 ```
 # Creating Python Packages That Depend On OpenMDAOCore.jl
-The OpenMDAO.jl repository contains an example Python package that implements a couple of the examples described in the previous docs (the [`SparseADExplicitComp` Paraboloid](@ref) and [`SparseADExplicitComp` with Actual Sparsity](@ref) examples) in the `examples/example_python_package_openmdao_jl/` sub-directory.
+The OpenMDAO.jl repository contains an example Python package that implements a couple of the examples described in the previous docs (the [`ADExplicitComp (SparseFlavor)` Paraboloid](@ref) and [`ADExplicitComp (SparseFlavor)` with Actual Sparsity](@ref) examples) in the `examples/example_python_package_openmdao_jl/` sub-directory.
 The package structure looks like this:
 
 ```
@@ -205,7 +205,7 @@ function get_parabaloid_comp()
     ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
 
     # Create the OpenMDAOCore.jl component.
-    comp = OpenMDAOCore.SparseADExplicitComp(ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
+    comp = OpenMDAOCore.ADExplicitComp(OpenMDAOCore.SparseFlavor(), ad_backend, f_paraboloid!, Y_ca, X_ca; params=nothing)
 
     return comp
 end

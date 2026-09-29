@@ -2,7 +2,7 @@ using SysInfo: SysInfo
 using ReTestItems
 # Load the weakdeps before `OpenMDAOCore` so the
 # `OpenMDAOCoreSparseMatrixColoringsExt` extension is triggered on load and its
-# re-exported names (`SparseADExplicitComp`, `PerturbedDenseSparsityDetector`,
+# re-exported names (`PerturbedDenseSparsityDetector`,
 # `get_rows_cols_dict`, `get_rows_cols_dict_from_sparsity`, `ca2strdict_sparse`)
 # are available to the test setup module.
 # using SparseArrays

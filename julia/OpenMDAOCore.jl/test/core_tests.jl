@@ -377,11 +377,12 @@ end
     @test all(cols .== [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
 end
 
-@testitem "get_rows_cols_dict_from_sparsity, 0d, 1d, 2d" begin
-    using OpenMDAOCore
+@testitem "_get_rows_cols_dict_from_sparsity, 0d, 1d, 2d" begin
     using Test
     using ComponentArrays: ComponentVector, ComponentMatrix, getaxes
     using SparseArrays: sparse
+    using SparseMatrixColorings: SparseMatrixColorings
+    using OpenMDAOCore: OpenMDAOCore
 
     N, M = 3, 4
     X_ca = ComponentVector(a=0.0, b=zeros(Float64, N), c=zeros(Float64, N, M), crev=zeros(Float64, M, N))
@@ -425,10 +426,10 @@ end
     J_ca_sparse = ComponentMatrix(sparse(J_ca), getaxes(J_ca))
 
     # Get the rows and cols dict.
-    rcdict = get_rows_cols_dict_from_sparsity(J_ca_sparse)
+    rcdict = OpenMDAOCore._get_rows_cols_dict_from_sparsity(J_ca_sparse)
 
     # Shouldn't make a difference if the Jacobian is sparse or not.
-    rcdict_not_sparse_J_ca = get_rows_cols_dict_from_sparsity(J_ca)
+    rcdict_not_sparse_J_ca = OpenMDAOCore._get_rows_cols_dict_from_sparsity(J_ca)
     @test rcdict == rcdict_not_sparse_J_ca
 
     # Short function that puts the rows and cols in a standard order for comparison purposes.
@@ -544,11 +545,13 @@ end
     @test cols == Vector{Int}()
 end
 
-@testitem "get_rows_cols_dict_from_sparsity, 3d" begin
-    using OpenMDAOCore
+@testitem "_get_rows_cols_dict_from_sparsity, 3d" begin
     using Test
     using ComponentArrays: ComponentVector, ComponentMatrix, getaxes
     using SparseArrays: sparse
+    using SparseMatrixColorings: SparseMatrixColorings
+    using OpenMDAOCore
+    using OpenMDAOCore: _get_rows_cols_dict_from_sparsity
 
     I, J, K = 3, 4, 5
     X_ca = ComponentVector(a=zeros(Float64, I), b=zeros(Float64, I, J), c=zeros(Float64, J, I, K))
@@ -584,9 +587,9 @@ end
     J_ca_sparse = ComponentMatrix(sparse(J_ca), getaxes(J_ca))
 
     # Get the rows and cols dict.
-    rcdict = get_rows_cols_dict_from_sparsity(J_ca_sparse)
+    rcdict = _get_rows_cols_dict_from_sparsity(J_ca_sparse)
 
-    rcdict_not_sparse_J_ca = get_rows_cols_dict_from_sparsity(J_ca)
+    rcdict_not_sparse_J_ca = _get_rows_cols_dict_from_sparsity(J_ca)
     @test rcdict == rcdict_not_sparse_J_ca
 
     # Short function that puts the rows and cols in a standard order for comparison purposes.

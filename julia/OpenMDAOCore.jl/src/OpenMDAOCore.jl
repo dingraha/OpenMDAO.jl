@@ -6,7 +6,17 @@ using DifferentiationInterface: DifferentiationInterface
 using Random: rand!
 
 include("utils.jl")
-export get_rows_cols, ca2strdict, rcdict2strdict
+export get_rows_cols, ca2strdict, rcdict2strdict, get_rows_cols_dict, ca2strdict_sparse
+
+# `PerturbedDenseSparsityDetector` (type + constructor) is declared in the main
+# package so it can be imported without the extension loaded. The sparse
+# *functionality* (the `SparseFlavor` constructors, `compute_partials!`,
+# sparsity detection, `ca2strdict_sparse`, `get_rows_cols_dict_from_sparsity`,
+# the sparse overloads of `_maybe_nonzeros`, etc.) is provided by the
+# `OpenMDAOCoreSparseMatrixColoringsExt` extension, which loads when both
+# `SparseArrays` and `SparseMatrixColorings` are available.
+export PerturbedDenseSparsityDetector
+
 
 include("interface.jl")
 export AbstractComp, AbstractExplicitComp, AbstractImplicitComp
@@ -22,19 +32,15 @@ export PartialsData
 
 include("abstract_ad.jl")
 export get_callback, get_input_ca, get_output_ca, get_jacobian_ca, get_units, get_backend, get_prep
+export ADExplicitComp,
+    DerivativeFlavor, AssembledFlavor, MatrixFreeFlavor,
+    DenseFlavor, SparseFlavor,
+    MatrixFreeForwardFlavor, MatrixFreeReverseFlavor,
+    DenseDerivPrep, MatrixFreeDerivPrep, SparseDerivPrep
 
 include("dense_ad.jl")
-export DenseADExplicitComp
 
 include("matrix_free_ad.jl")
-export MatrixFreeADExplicitComp, get_dinput_ca, get_doutput_ca
-
-# Sparse types are declared in the main package so they can be imported and
-# dispatched on without the extension loaded. The sparse *functionality*
-# (constructors, `compute_partials!`, sparsity detection, etc.) is provided by
-# the `OpenMDAOCoreSparseMatrixColoringsExt` extension, which loads when both
-# `SparseArrays` and `SparseMatrixColorings` are available.
-include("sparse_ad.jl")
-export SparseADExplicitComp, get_rows_cols_dict, PerturbedDenseSparsityDetector
+export get_dinput_ca, get_doutput_ca
 
 end # module
