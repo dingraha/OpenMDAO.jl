@@ -139,6 +139,7 @@ jobs:
       - name: omjlcomps install
         run: |
           echo "PWD = $PWD"
+          python -m juliapkg add --dev --path=$PWD/julia/OpenMDAOCore.jl --target ./python/src/juliapkg.json OpenMDAOCore
           pip install --config-settings editable_mode=compat -e ./python
           python -c "import juliapkg; juliapkg.resolve()"
         # env:
