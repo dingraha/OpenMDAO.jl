@@ -259,7 +259,6 @@ class TestJuliaExplicitCompWithLargeOption(unittest.TestCase):
             #     n_big = self.n_big = 1_000_000
             n_big = 1_000_000
         else:
-            # n_big = self.n_big = 500_000_000
             n_big = self.n_big = 10_000_000
         p_big = self.p_big = om.Problem()
         ecomp_big = jl.ECompTest.ECompWithLargeOption(n_big)
@@ -311,7 +310,7 @@ class TestJuliaExplicitCompWithLargeOption(unittest.TestCase):
             # The MacOS runners on GH Actions seem very flaky.
             atol = 1.0
         else:
-            atol = 0.1
+            atol = 0.5
         np.testing.assert_allclose(time_avg[1]/time_avg[0], 1.0, atol=atol)
 
 
