@@ -33,8 +33,6 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: OpenMDAOCore.jl Tests
         shell: julia --color=yes {0}
         run: |
@@ -42,8 +40,6 @@ jobs:
           Pkg.activate("./julia/OpenMDAOCore.jl")
           Pkg.update()
           Pkg.test()
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
 
   OpenMDAO_jl:
     name: Julia ${{ matrix.julia-version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -68,8 +64,6 @@ jobs:
         run: |
           using Pkg
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: OpenMDAO.jl Tests
         shell: julia --color=yes {0}
         run: |
@@ -82,8 +76,6 @@ jobs:
           Pkg.instantiate()
           Pkg.update()
           Pkg.test()
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
 
   omjlcomps:
     name: Python ${{ matrix.python-version }} - ${{ matrix.os }} - ${{ github.event_name }}
@@ -115,26 +107,13 @@ jobs:
         shell: julia --color=yes {0}
         run: |
           using Pkg
-          # Pkg.Registry.add("General")
           Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General"))
-          # Pkg.Registry.update()
-          # Pkg.Registry.status()
-      #   # env:
-      #   #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: Install juliapkg
         run: |
           echo "PWD = $PWD"
-          # Get the json file with all the test dependencies, and that will install the local version of OpenMDAOCore.jl.
-          # cp $PWD/python/omjlcomps/test/juliapkg-test.json $PWD/python/omjlcomps/juliapkg.json
-          # cp $PWD/python/test/juliapkg-test.json $PWD/python/src/juliapkg.json
           python -m pip install --upgrade pip
           pip install juliapkg'[cli]'
           python -m juliapkg resolve
-          # cat ./julia/OpenMDAOCore.jl/Project.toml
-          # python -m juliapkg add --dev OpenMDAOCore --path=$PWD/julia/OpenMDAOCore.jl
-          # python -m juliapkg resolve
-        # env:
-        #   JULIA_PKG_SERVER: ""  # Forces fallback to uncompressed Git cloning
       - name: omjlcomps install
         run: |
           echo "PWD = $PWD"
@@ -142,24 +121,13 @@ jobs:
           python -m juliapkg run -E 'using Pkg; rm(joinpath(DEPOT_PATH[1], "registries", "General"), force=true, recursive=true); Pkg.Registry.add("General")'
           python -m juliapkg add --dev --path=$PWD/julia/OpenMDAOCore.jl --target=$PWD/python/src/juliapkg.json OpenMDAOCore
           pip install --config-settings editable_mode=compat -e ./python
-          # python -c "import juliapkg; juliapkg.resolve()"
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
-        # env:
-        #   JULIA_PKG_SERVER: ""  # Forces fallback to uncompressed Git cloning
       - name: omjlcomps tests
         run: |
           echo "PWD = $PWD"
-          # python ./python/test/test_julia_explicit_comp.py
-          # python ./python/test/test_julia_implicit_comp.py
-          # # python ./python/test/test_aviary_support.py
-          # python ./python/test/test_explicit_ad_shape_by_conn.py
           cd python/test
           python test_julia_explicit_comp.py
           python test_julia_implicit_comp.py
           python test_explicit_ad_shape_by_conn.py
-        # env:
-        #       JULIA_PKG_USE_CLI_GIT: 'true'
       - name: test examples
         run: |
           echo "PWD = $PWD"
@@ -172,10 +140,3 @@ jobs:
           python ./example_python_package_openmdao_jl/test/test_circle_example.py
           python ./scripts/run_circuit.py
           python ./example_python_package_openmdao_jl/test/test_circuit_example.py
-
-      # - name: Setup debug session on failure
-      #   if: ${{ failure() }}
-      #   uses: owenthereal/action-upterm@v1
-      #   with:
-      #     limit-access-to-actor: true
-      #     wait-timeout-minutes: 15
