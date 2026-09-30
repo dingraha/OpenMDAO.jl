@@ -139,7 +139,9 @@ jobs:
       - name: omjlcomps install
         run: |
           echo "PWD = $PWD"
-          python -m juliapkg add --dev --path=$PWD/julia/OpenMDAOCore.jl --target ./python/src/juliapkg.json OpenMDAOCore
+          # WTF?
+          python -m juliapkg run -E 'using Pkg; rm(joinpath(DEPOT_PATH[1], "registries", "General"), force=true, recursive=true); Pkg.Registry.add("General")'
+          python -m juliapkg add --dev --path=$PWD/julia/OpenMDAOCore.jl --target=$PWD/python/src/juliapkg.json OpenMDAOCore
           pip install --config-settings editable_mode=compat -e ./python
           python -c "import juliapkg; juliapkg.resolve()"
         # env:
@@ -163,7 +165,7 @@ jobs:
         run: |
           echo "PWD = $PWD"
           cd ./examples/example_python_package_openmdao_jl
-          python -m juliapkg add --dev --path=$PWD/../../julia/OpenMDAOCore.jl --target ./example_python_package_openmdao_jl/juliapkg.json OpenMDAOCore
+          python -m juliapkg add --dev --path=$PWD/../../julia/OpenMDAOCore.jl --target=$PWD/example_python_package_openmdao_jl/juliapkg.json OpenMDAOCore
           pip install --config-settings editable_mode=compat -e .
           python ./scripts/run_paraboloid.py
           python ./example_python_package_openmdao_jl/test/test_paraboloid_example.py
