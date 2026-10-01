@@ -136,6 +136,8 @@ struct SparseDerivPrep{TJ,TPrep}
     rcdict::Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}
 end
 
+
+
 # ---------------------------------------------------------------------------
 # The unified explicit AD component.
 # ---------------------------------------------------------------------------
@@ -351,3 +353,126 @@ has_compute_jacvec_product(self::ADExplicitComp{SparseFlavor}) = false
 has_setup_partials(self::ADExplicitComp{<:MatrixFreeFlavor}) = true
 has_compute_partials(self::ADExplicitComp{<:MatrixFreeFlavor}) = false
 has_compute_jacvec_product(self::ADExplicitComp{<:MatrixFreeFlavor}) = true
+
+# ---------------------------------------------------------------------------
+# ADImplicitComp type definition
+# ---------------------------------------------------------------------------
+
+"""
+    ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS,TDP,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+
+An `<:AbstractImplicitComp` differentiated via automatic differentiation
+
+The full `[dR/dY | dR/dX]` Jacobian is computed in a single `DifferentiationInterface.jacobian!`
+call by concatenating the output (state) vector `Y` and input vector `X` into a combined vector `YX` and
+differentiating with respect to `YX`.
+
+* `F<:DerivativeFlavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref),
+  [`MatrixFreeReverseFlavor`](@ref), or [`SparseFlavor`](@ref)
+* `InPlace::Bool`: `true` for in-place functions `f!(R, Y, X, params)`, `false` for
+  out-of-place `R = f(Y, X, params)`
+* `TAD`: the AD backend type (`<:ADTypes.AbstractADType`)
+
+# Fields
+* `ad_backend::TAD`: `<:ADTypes.AbstractADType` automatic differentiation backend
+* `compute_adable::TCompute`: closure of the form `compute_adable(R, YX)` (in-place) or
+  `R = compute_adable(YX)` (out-of-place) compatible with DifferentiationInterface.jl,
+where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is the residuals
+  `ComponentVector`.  Parameters are captured by the closure.
+* `YX_ca::TYX`: concatenated `ComponentVector` of outputs (state) followed by inputs (the differentiation variable)
+* `R_ca::TR`: `ComponentVector` of residuals
+* `YX_ca_cs::TYXCS`: `ComplexF64` version of `YX_ca` (for the complex-step method)
+* `R_ca_cs::TRCS`: `ComplexF64` version of `R_ca` (for the complex-step method)
+* `deriv_prep::TDP`: flavor-specific derivative preparation data
+* `Y_range::TYR`: range of indices for outputs (states) within `YX_ca`
+* `X_range::TXR`: range of indices for inputs within `YX_ca`
+* `Y_axes::TYAx`: axes information for outputs (states)
+* `X_axes::TXAx`: axes information for inputs
+"""
+struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS,TDP,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+    ad_backend::TAD
+    compute_adable::TCompute
+    YX_ca::TYX
+    R_ca::TR
+    YX_ca_cs::TYXCS
+    R_ca_cs::TRCS
+    deriv_prep::TDP
+    Y_range::TYR
+    X_range::TXR
+    Y_axes::TYAx
+    X_axes::TXAx
+
+    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes) where {F<:DerivativeFlavor, InPlace}
+        return new{F, InPlace,
+                   typeof(ad_backend), typeof(compute_adable),
+                   typeof(YX_ca), typeof(R_ca),
+                   typeof(YX_ca_cs), typeof(R_ca_cs),
+                   typeof(deriv_prep),
+                   typeof(Y_range), typeof(X_range), typeof(Y_axes), typeof(X_axes)}(
+            ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    end
+end
+
+# ---------------------------------------------------------------------------
+# ADImplicitComp accessors
+# ---------------------------------------------------------------------------
+
+get_callback(comp::ADImplicitComp) = comp.compute_adable
+get_backend(comp::ADImplicitComp) = comp.ad_backend
+get_prep(comp::ADImplicitComp) = comp.deriv_prep.prep
+
+get_combined_ca(::Type{<:AbstractFloat}, comp::ADImplicitComp) = comp.YX_ca
+get_combined_ca(::Type{Complex{T}}, comp::ADImplicitComp) where {T<:AbstractFloat} = comp.YX_ca_cs
+get_combined_ca(comp::ADImplicitComp) = get_combined_ca(AbstractFloat, comp)
+
+get_residual_ca(::Type{<:AbstractFloat}, comp::ADImplicitComp{<:DerivativeFlavor, true}) = comp.R_ca
+get_residual_ca(::Type{Complex{T}}, comp::ADImplicitComp{<:DerivativeFlavor, true}) where {T<:AbstractFloat} = comp.R_ca_cs
+get_residual_ca(::Type{<:AbstractFloat}, comp::ADImplicitComp{<:DerivativeFlavor, false}) = get_callback(comp)(get_combined_ca(AbstractFloat, comp))
+get_residual_ca(TF::Type{Complex{T}}, comp::ADImplicitComp{<:DerivativeFlavor, false}) where {T<:AbstractFloat} = get_callback(comp)(get_combined_ca(TF, comp))
+get_residual_ca(comp::ADImplicitComp) = get_residual_ca(AbstractFloat, comp)
+
+# Dense: read the dense Jacobian ComponentMatrix.
+get_jacobian_ca(comp::ADImplicitComp{DenseFlavor}) = comp.deriv_prep.J_ca
+
+# Matrix-free: read the tangent/cotangent buffers.
+get_dcombined_ca(comp::ADImplicitComp{<:MatrixFreeFlavor}) = comp.deriv_prep.dX_ca
+get_dresidual_ca(comp::ADImplicitComp{<:MatrixFreeFlavor}) = comp.deriv_prep.dY_ca
+
+input_keys(comp::ADImplicitComp) = keys(indexmap(only(comp.X_axes)))
+output_keys(comp::ADImplicitComp) = keys(indexmap(only(comp.Y_axes)))
+
+function get_input_ca(::Type{TF}, comp::ADImplicitComp) where {TF}
+    YX = get_combined_ca(TF, comp)
+    return ComponentArray(@view(YX[comp.X_range]), comp.X_axes)
+end
+get_input_ca(comp::ADImplicitComp) = get_input_ca(AbstractFloat, comp)
+
+function get_output_ca(::Type{TF}, comp::ADImplicitComp) where {TF}
+    YX = get_combined_ca(TF, comp)
+    return ComponentArray(@view(YX[comp.Y_range]), comp.Y_axes)
+end
+get_output_ca(comp::ADImplicitComp) = get_output_ca(AbstractFloat, comp)
+
+function get_dinput_ca(comp::ADImplicitComp{<:MatrixFreeFlavor})
+    dYX = get_dcombined_ca(comp)
+    return ComponentArray(@view(dYX[comp.X_range]), comp.X_axes)
+end
+
+function get_doutput_ca(comp::ADImplicitComp{<:MatrixFreeFlavor})
+    dYX = get_dcombined_ca(comp)
+    return ComponentArray(@view(dYX[comp.Y_range]), comp.Y_axes)
+end
+
+# ---------------------------------------------------------------------------
+# ADImplicitComp has_* methods
+# ---------------------------------------------------------------------------
+
+# Dense: support apply_nonlinear + linearize, not apply_linear (matrix-free).
+has_apply_nonlinear(self::ADImplicitComp{DenseFlavor}) = true
+has_linearize(self::ADImplicitComp{DenseFlavor}) = true
+has_apply_linear(self::ADImplicitComp{DenseFlavor}) = false
+
+# Matrix-free: support apply_nonlinear + apply_linear, not linearize (assembled).
+has_apply_nonlinear(self::ADImplicitComp{<:MatrixFreeFlavor}) = true
+has_linearize(self::ADImplicitComp{<:MatrixFreeFlavor}) = false
+has_apply_linear(self::ADImplicitComp{<:MatrixFreeFlavor}) = true

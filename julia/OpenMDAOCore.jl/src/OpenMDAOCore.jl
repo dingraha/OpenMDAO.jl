@@ -33,7 +33,7 @@ export PartialsData
 
 include("abstract_ad.jl")
 export get_callback, get_input_ca, get_output_ca, get_jacobian_ca, get_units, get_backend, get_prep
-export ADExplicitComp,
+export ADExplicitComp, ADImplicitComp,
     DerivativeFlavor, AssembledFlavor, MatrixFreeFlavor,
     DenseFlavor, SparseFlavor,
     MatrixFreeForwardFlavor, MatrixFreeReverseFlavor,
@@ -44,7 +44,10 @@ include("dense_ad.jl")
 include("matrix_free_ad.jl")
 export get_dinput_ca, get_doutput_ca
 
+include("dense_ad_implicit.jl")
+include("matrix_free_ad_implicit.jl")
+
 include("create_component.jl")
-export create_explicit_component
+export create_explicit_component, create_implicit_component
 
 end # module

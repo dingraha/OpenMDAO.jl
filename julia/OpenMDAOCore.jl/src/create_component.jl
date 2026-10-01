@@ -87,3 +87,71 @@ function create_explicit_component(flavor::DerivativeFlavor, ad_backend::TAD,
         shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict,
         force_skip_prep=force_skip_prep)
 end
+
+# ---------------------------------------------------------------------------
+# Convenience constructors for `ADImplicitComp`
+# ---------------------------------------------------------------------------
+
+"""
+    create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+
+Create an in-place [`ADImplicitComp`](@ref) from a user-defined function and state/output and input `ComponentVector`s.
+
+For the matrix-free flavors, `ad_backend` is validated against the flavor's required derivative mode:
+* [`MatrixFreeForwardFlavor`](@ref) requires the backend to support JVPs (pushforwards).
+* [`MatrixFreeReverseFlavor`](@ref) requires the backend to support VJPs (pullbacks).
+
+# Positional Arguments
+* `flavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref), or [`MatrixFreeReverseFlavor`](@ref)
+* `ad_backend`: `<:ADTypes.AbstractADType` automatic differentiation "backend" library
+* `f!`: function of the form `f!(R_ca, Y_ca, X_ca, params)` which writes residuals to `R_ca` using states/outputs `Y_ca`, inputs `X_ca` and, optionally, parameters `params`.
+* `Y_ca`: `ComponentVector` of states/outputs
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the fourth argument to `f!`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
+"""
+function create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend::TAD,
+        f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+    if flavor isa MatrixFreeForwardFlavor
+        can_jvp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support JVPs (pushforwards), which are required for MatrixFreeForwardFlavor"))
+    elseif flavor isa MatrixFreeReverseFlavor
+        can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
+    end
+    return ADImplicitComp(flavor, Val(true), ad_backend, f!, Y_ca, X_ca;
+        params=params, force_skip_prep=force_skip_prep)
+end
+
+"""
+    create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+
+Create an out-of-place [`ADImplicitComp`](@ref) from a user-defined function and state/output and input `ComponentVector`s.
+
+For the matrix-free flavors, `ad_backend` is validated against the flavor's required derivative mode:
+* [`MatrixFreeForwardFlavor`](@ref) requires the backend to support JVPs (pushforwards).
+* [`MatrixFreeReverseFlavor`](@ref) requires the backend to support VJPs (pullbacks).
+
+# Positional Arguments
+* `flavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref), or [`MatrixFreeReverseFlavor`](@ref)
+* `ad_backend`: `<:ADTypes.AbstractADType` automatic differentiation "backend" library
+* `f`: function of the form `R_ca = f(Y_ca, X_ca, params)` which returns residuals `R_ca` using states/outputs `Y_ca`, inputs `X_ca` and, optionally, parameters `params`.
+* `Y_ca`: `ComponentVector` of states/outputs
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the third argument to `f`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
+"""
+function create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend::TAD,
+        f::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+    if flavor isa MatrixFreeForwardFlavor
+        can_jvp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support JVPs (pushforwards), which are required for MatrixFreeForwardFlavor"))
+    elseif flavor isa MatrixFreeReverseFlavor
+        can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
+    end
+    return ADImplicitComp(flavor, Val(false), ad_backend, f, Y_ca, X_ca;
+        params=params, force_skip_prep=force_skip_prep)
+end
