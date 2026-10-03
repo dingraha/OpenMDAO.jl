@@ -66,7 +66,7 @@ nothing # hide
 Now we can create the component:
 
 ```@example matrix_free_paraboloid
-comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.MatrixFreeForwardFlavor(), ad_backend, f_paraboloid, X_ca)
+comp = OpenMDAOCore.create_explicit_component(OpenMDAOCore.MatrixFreeReverseFlavor(), ad_backend, f_paraboloid, X_ca)
 parab_comp = make_component(comp)
 nothing # hide
 ```

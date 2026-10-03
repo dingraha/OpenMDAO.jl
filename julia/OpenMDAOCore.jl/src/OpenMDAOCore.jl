@@ -1,7 +1,7 @@
 module OpenMDAOCore
 
 using ADTypes: ADTypes
-using ComponentArrays: ComponentArray, ComponentVector, ComponentMatrix, getaxes, getdata
+using ComponentArrays: ComponentArray, ComponentVector, ComponentMatrix, getaxes, getdata, indexmap
 using DifferentiationInterface: DifferentiationInterface
 using Random: rand!
 

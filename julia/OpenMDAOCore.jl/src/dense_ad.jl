@@ -9,9 +9,14 @@ using ADTypes: ADTypes
 using ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 using DifferentiationInterface: DifferentiationInterface
 
-function _get_dense_prep_stuff(ad_backend, f!, Y_ca, X_ca)
-    # Need to "prepare" the backend.
-    prep = DifferentiationInterface.prepare_jacobian(f!, Y_ca, ad_backend, X_ca)
+# Note: these prep builders are also reused by the implicit AD components in
+# `dense_ad_implicit.jl`: the implicit `compute_adable(R, YX)` closures already
+# have DifferentiationInterface's in-place (`f!(y, x)`) or out-of-place
+# (`y = f(x)`) forms, so implicit components pass `R_ca` as the "output"
+# argument (`Y_ca`) and the combined `YX_ca` as the "input" argument (`X_ca`).
+function _get_dense_prep_stuff(ad_backend, f!, Y_ca, X_ca, force_skip_prep::Bool=false)
+    # Need to "prepare" the backend if not skipping prep.
+    prep = force_skip_prep ? nothing : DifferentiationInterface.prepare_jacobian(f!, Y_ca, ad_backend, X_ca)
 
     # Get the Jacobian matrix.
     TF = promote_type(eltype(Y_ca), eltype(X_ca))
@@ -28,9 +33,9 @@ function _get_dense_prep_stuff(ad_backend, f!, Y_ca, X_ca)
     return DenseDerivPrep(J_ca, prep), X_ca_cs, Y_ca_cs
 end
 
-function _get_dense_prep_stuff(ad_backend, f, X_ca)
-    # Need to "prepare" the backend.
-    prep = DifferentiationInterface.prepare_jacobian(f, ad_backend, X_ca)
+function _get_dense_prep_stuff(ad_backend, f, X_ca, force_skip_prep::Bool=false)
+    # Need to "prepare" the backend if not skipping prep.
+    prep = force_skip_prep ? nothing : DifferentiationInterface.prepare_jacobian(f, ad_backend, X_ca)
 
     # Need the output component vector to define the axes of the Jacobian.
     Y_ca = f(X_ca)

@@ -19,6 +19,7 @@ using OpenMDAOCore: VarData, PartialsData,
     get_input_ca, get_output_ca, get_jacobian_ca, get_jacobian_ca,
     get_rows_cols, get_rows_cols_dict, get_rows_cols_dict_from_sparsity,
     get_dinput_ca, get_doutput_ca,
+    get_residual_ca,
     ca2strdict, ca2strdict_sparse, rcdict2strdict,
     PerturbedDenseSparsityDetector
 
@@ -193,6 +194,20 @@ function do_compute_residuals_check(comp)
     return nothing
 end
 
+# Evaluate the component with complex-valued arrays for complex-step checks.
+# Explicit components use `compute!`, and the results end up in the outputs
+# dict; implicit components use `apply_nonlinear!`, and the results end up in
+# the residuals dict. Returns the dict holding the results.
+function cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+    if comp isa OpenMDAOCore.AbstractImplicitComp
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        return residuals_dict_cs
+    else
+        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+        return outputs_dict_cs
+    end
+end
+
 function do_compute_partials_check(comp)
     sparse_jac = typeof(comp) <: ADExplicitComp{SparseFlavor}
 
@@ -211,13 +226,25 @@ function do_compute_partials_check(comp)
     inputs_dict_cs["c"] .= inputs_dict["c"]
     inputs_dict_cs["d"] .= inputs_dict["d"]
     outputs_dict_cs = ca2strdict(get_output_ca(ComplexF64, comp))
+    # Explicit components overwrite the complex output buffers in `compute!`,
+    # but implicit components treat the outputs as independent variables, so
+    # initialize them with the current (real-valued) outputs.
+    for k in keys(outputs_dict_cs)
+        outputs_dict_cs[k] .= outputs_dict[k]
+    end
+    # For implicit components, the complex-step results end up in the residuals.
+    residuals_dict_cs = comp isa OpenMDAOCore.AbstractImplicitComp ? ca2strdict(OpenMDAOCore.get_residual_ca(ComplexF64, comp)) : nothing
 
     # Complex step size.
     h = 1e-10
 
     J_ca = get_jacobian_ca(comp)
 
-    @test size(getdata(J_ca)) == (length(get_output_ca(comp)), length(get_input_ca(comp)))
+    if comp isa OpenMDAOCore.AbstractImplicitComp
+        @test size(getdata(J_ca)) == (length(OpenMDAOCore.get_residual_ca(comp)), length(OpenMDAOCore.get_combined_ca(comp)))
+    else
+        @test size(getdata(J_ca)) == (length(get_output_ca(comp)), length(get_input_ca(comp)))
+    end
     if sparse_jac
         @test issparse(getdata(J_ca))
         @test nnz(getdata(J_ca)) == N + N + N*M + N*M + M*N + M*N + M*N + M*N + N*M + N*M
@@ -230,8 +257,12 @@ function do_compute_partials_check(comp)
         partials_dict = ca2strdict(J_ca)
     end
 
-    # Actually do the compute_partials.
-    OpenMDAOCore.compute_partials!(comp, inputs_dict, partials_dict)
+    # Actually do the compute_partials. Implicit components linearize instead.
+    if comp isa OpenMDAOCore.AbstractImplicitComp
+        OpenMDAOCore.linearize!(comp, inputs_dict, outputs_dict, partials_dict)
+    else
+        OpenMDAOCore.compute_partials!(comp, inputs_dict, partials_dict)
+    end
 
     a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
     e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
@@ -256,9 +287,9 @@ function do_compute_partials_check(comp)
     @test all(vals .≈ vals_check)
 
     inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
-    OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+    result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
     for n in 1:N
-        @test imag(outputs_dict_cs["e"][n])/h ≈ deda_check[n]
+        @test imag(result_dict_cs["e"][n])/h ≈ deda_check[n]
     end
     inputs_dict_cs["a"][1] = inputs_dict["a"][1]
 
@@ -282,8 +313,8 @@ function do_compute_partials_check(comp)
     # Check with complex step.
     for n in 1:N
         inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
-        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-        @test imag(outputs_dict_cs["e"][n])/h ≈ dedb_check[n, n]
+        result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        @test imag(result_dict_cs["e"][n])/h ≈ dedb_check[n, n]
         inputs_dict_cs["b"][n] = inputs_dict["b"][n]
     end
 
@@ -309,9 +340,9 @@ function do_compute_partials_check(comp)
     # Check with complex step.
     for m in 1:M
         inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
-        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+        result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
         for n in 1:N
-            @test imag(outputs_dict_cs["e"][n])/h ≈ dedc_check[n, m]
+            @test imag(result_dict_cs["e"][n])/h ≈ dedc_check[n, m]
         end
         inputs_dict_cs["c"][m] = inputs_dict["c"][m]
     end
@@ -339,8 +370,8 @@ function do_compute_partials_check(comp)
     for n in 1:N
         for m in 1:M
             inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
-            OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-            @test imag(outputs_dict_cs["e"][n])/h ≈ dedd_check[n, m, n]
+            result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(result_dict_cs["e"][n])/h ≈ dedd_check[n, m, n]
             inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
         end
     end
@@ -366,10 +397,10 @@ function do_compute_partials_check(comp)
     @test all(vals .≈ vals_check)
     # Check with complex step.
     inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
-    OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+    result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
     for n in 1:N
         for m in 1:N
-            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfda_check[m, n]
+            @test imag(result_dict_cs["f"][m, n])/h ≈ dfda_check[m, n]
         end
     end
     inputs_dict_cs["a"][1] = inputs_dict["a"][1]
@@ -396,9 +427,9 @@ function do_compute_partials_check(comp)
     # Check with complex step.
     for n in 1:N
         inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
-        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+        result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
         for m in 1:M
-            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfdb_check[m, n, n]
+            @test imag(result_dict_cs["f"][m, n])/h ≈ dfdb_check[m, n, n]
         end
         inputs_dict_cs["b"][n] = inputs_dict["b"][n]
     end
@@ -425,9 +456,9 @@ function do_compute_partials_check(comp)
     # Check with complex step.
     for m in 1:M
         inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
-        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+        result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
         for n in 1:N
-            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfdc_check[m, n, m]
+            @test imag(result_dict_cs["f"][m, n])/h ≈ dfdc_check[m, n, m]
         end
         inputs_dict_cs["c"][m] = inputs_dict["c"][m]
     end
@@ -455,8 +486,8 @@ function do_compute_partials_check(comp)
     for n in 1:N
         for m in 1:M
             inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
-            OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-            @test imag(outputs_dict_cs["f"][m, n])/h ≈ dfdd_check[m, n, m, n]
+            result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(result_dict_cs["f"][m, n])/h ≈ dfdd_check[m, n, m, n]
             inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
         end
     end
@@ -474,10 +505,10 @@ function do_compute_partials_check(comp)
     end
     # Check with complex step.
     inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
-    OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+    result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
     for m in 1:M
         for n in 1:N
-            @test imag(outputs_dict_cs["g"][n, m])/h ≈ 0
+            @test imag(result_dict_cs["g"][n, m])/h ≈ 0
         end
     end
     inputs_dict_cs["a"][1] = inputs_dict["a"][1]
@@ -504,9 +535,9 @@ function do_compute_partials_check(comp)
     # Check with complex step.
     for n in 1:N
         inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
-        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+        result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
         for m in 1:M
-            @test imag(outputs_dict_cs["g"][n, m])/h ≈ dgdb_check[n, m, n]
+            @test imag(result_dict_cs["g"][n, m])/h ≈ dgdb_check[n, m, n]
         end
         inputs_dict_cs["b"][n] = inputs_dict["b"][n]
     end
@@ -525,9 +556,9 @@ function do_compute_partials_check(comp)
     # Check with complex step.
     for m in 1:M
         inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
-        OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
+        result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
         for n in 1:N
-            @test imag(outputs_dict_cs["g"][n, m])/h ≈ 0
+            @test imag(result_dict_cs["g"][n, m])/h ≈ 0
         end
         inputs_dict_cs["c"][m] = inputs_dict["c"][m]
     end
@@ -555,8 +586,8 @@ function do_compute_partials_check(comp)
     for n in 1:N
         for m in 1:M
             inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
-            OpenMDAOCore.compute!(comp, inputs_dict_cs, outputs_dict_cs)
-            @test imag(outputs_dict_cs["g"][n, m])/h ≈ dgdd_check[n, m, m, n]
+            result_dict_cs = cs_eval!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(result_dict_cs["g"][n, m])/h ≈ dgdd_check[n, m, m, n]
             inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
         end
     end
@@ -566,7 +597,11 @@ function do_compute_partials_check(comp)
     # So I think partitals_dict has sparse arrays, but partials_dict2 might just have dense arrays.
     # Ah, no, partials_dict has just plain vectors, but partials_dict2 has reshaped sparse arrays.
     @test keys(partials_dict2) == keys(partials_dict)
-    OpenMDAOCore.compute_partials!(comp, inputs_dict, partials_dict2)
+    if comp isa OpenMDAOCore.AbstractImplicitComp
+        OpenMDAOCore.linearize!(comp, inputs_dict, outputs_dict, partials_dict2)
+    else
+        OpenMDAOCore.compute_partials!(comp, inputs_dict, partials_dict2)
+    end
     for k in keys(partials_dict2)
         @test all(OpenMDAOCore._maybe_nonzeros(partials_dict2[k]) .≈ OpenMDAOCore._maybe_nonzeros(partials_dict[k]))
     end
@@ -584,7 +619,14 @@ function do_compute_jacvec_product_check_forward(comp)
     inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
     outputs_dict = ca2strdict(get_output_ca(comp))
 
-    OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
+    is_implicit = comp isa OpenMDAOCore.AbstractImplicitComp
+    if is_implicit
+        # Implicit components have no `compute!`; evaluate the residuals instead.
+        residuals_dict = ca2strdict(similar(OpenMDAOCore.get_residual_ca(comp)))
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict, outputs_dict, residuals_dict)
+    else
+        OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
+    end
 
     a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
     e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
@@ -597,7 +639,19 @@ function do_compute_jacvec_product_check_forward(comp)
     for k in keys(doutputs_dict)
         doutputs_dict[k] .= 0
     end
-    OpenMDAOCore.compute_jacvec_product!(comp, inputs_dict, dinputs_dict, doutputs_dict, "fwd")
+    if is_implicit
+        # Implicit components use `apply_linear!`, and the JVP results end up
+        # in the d_residuals dict, not the d_outputs dict.
+        dresiduals_dict = ca2strdict(OpenMDAOCore.get_dresidual_ca(comp))
+        for k in keys(dresiduals_dict)
+            dresiduals_dict[k] .= 0
+        end
+        OpenMDAOCore.apply_linear!(comp, inputs_dict, outputs_dict, dinputs_dict, doutputs_dict, dresiduals_dict, "fwd")
+        results_dict = dresiduals_dict
+    else
+        OpenMDAOCore.compute_jacvec_product!(comp, inputs_dict, dinputs_dict, doutputs_dict, "fwd")
+        results_dict = doutputs_dict
+    end
 
     # Hmm... so how do I check this?
     # Well, just got to do the matrix-vector product myself.
@@ -644,7 +698,7 @@ function do_compute_jacvec_product_check_forward(comp)
     de_check .+= dedd_check_rs * dxd_rs
 
     # Did all the inputs to `e`, so we're ready to test.
-    @test all(doutputs_dict["e"] .≈ de_check)
+    @test all(results_dict["e"] .≈ de_check)
 
     # Now do `f`.
     df_check = similar(f)
@@ -674,7 +728,7 @@ function do_compute_jacvec_product_check_forward(comp)
         end
     end
 
-    @test all(doutputs_dict["f"] .≈ df_check)
+    @test all(results_dict["f"] .≈ df_check)
 
     # Now do `g`.
     dg_check = similar(g)
@@ -698,7 +752,7 @@ function do_compute_jacvec_product_check_forward(comp)
         end
     end
 
-    @test all(doutputs_dict["g"] .≈ dg_check)
+    @test all(results_dict["g"] .≈ dg_check)
 
     return nothing
 end
@@ -713,7 +767,14 @@ function do_compute_jacvec_product_check_reverse(comp)
     inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
     outputs_dict = ca2strdict(get_output_ca(comp))
 
-    OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
+    is_implicit = comp isa OpenMDAOCore.AbstractImplicitComp
+    if is_implicit
+        # Implicit components have no `compute!`; evaluate the residuals instead.
+        residuals_dict = ca2strdict(similar(OpenMDAOCore.get_residual_ca(comp)))
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict, outputs_dict, residuals_dict)
+    else
+        OpenMDAOCore.compute!(comp, inputs_dict, outputs_dict)
+    end
 
     a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
     e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
@@ -726,7 +787,23 @@ function do_compute_jacvec_product_check_reverse(comp)
     for k in keys(dinputs_dict)
         dinputs_dict[k] .= 0
     end
-    OpenMDAOCore.compute_jacvec_product!(comp, inputs_dict, dinputs_dict, doutputs_dict, "rev")
+    if is_implicit
+        # Implicit components use `apply_linear!`. The seed for reverse mode is
+        # the residual cotangent; use the same random values stored in `dy`.
+        # Pass copies of the seed and fresh result dicts, since implicit
+        # `apply_linear!` accumulates into the dicts, and `dy` aliases the
+        # internal dY buffer (which the analytic checks below read).
+        dresiduals_dict = Dict{String,Any}(string(k) => copy(dy[k]) for k in keys(dy))
+        doutputs_result_dict = Dict{String,Any}(string(k) => zeros(size(dy[k])) for k in keys(dy))
+        # The pullback overwrites the whole internal dYX cotangent buffer,
+        # including the dY part that `dy` aliases, so snapshot and restore the
+        # seed values for the analytic checks below.
+        dy_seed = copy(dy)
+        OpenMDAOCore.apply_linear!(comp, inputs_dict, outputs_dict, dinputs_dict, doutputs_result_dict, dresiduals_dict, "rev")
+        dy .= dy_seed
+    else
+        OpenMDAOCore.compute_jacvec_product!(comp, inputs_dict, dinputs_dict, doutputs_dict, "rev")
+    end
 
     # Hmm... so how do I check this?
     # Well, just got to do the vector-jacobian product myself.
