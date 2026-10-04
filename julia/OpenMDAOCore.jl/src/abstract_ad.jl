@@ -384,12 +384,14 @@ where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is
 * `YX_ca_cs::TYXCS`: `ComplexF64` version of `YX_ca` (for the complex-step method)
 * `R_ca_cs::TRCS`: `ComplexF64` version of `R_ca` (for the complex-step method)
 * `deriv_prep::TDP`: flavor-specific derivative preparation data
+* `units_dict::Dict{Symbol,String}`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s)
+* `tags_dict::Dict{Symbol,Vector{String}}`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `Y_range::TYR`: range of indices for outputs (states) within `YX_ca`
 * `X_range::TXR`: range of indices for inputs within `YX_ca`
 * `Y_axes::TYAx`: axes information for outputs (states)
 * `X_axes::TXAx`: axes information for inputs
 """
-struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS,TDP,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
     ad_backend::TAD
     compute_adable::TCompute
     YX_ca::TYX
@@ -397,19 +399,22 @@ struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS
     YX_ca_cs::TYXCS
     R_ca_cs::TRCS
     deriv_prep::TDP
+    units_dict::Dict{Symbol,String}
+    tags_dict::Dict{Symbol,Vector{String}}
     Y_range::TYR
     X_range::TXR
     Y_axes::TYAx
     X_axes::TXAx
 
-    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes) where {F<:DerivativeFlavor, InPlace}
+    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes) where {F<:DerivativeFlavor, InPlace}
         return new{F, InPlace,
                    typeof(ad_backend), typeof(compute_adable),
                    typeof(YX_ca), typeof(R_ca),
                    typeof(YX_ca_cs), typeof(R_ca_cs),
                    typeof(deriv_prep),
+                   typeof(units_dict), typeof(tags_dict),
                    typeof(Y_range), typeof(X_range), typeof(Y_axes), typeof(X_axes)}(
-            ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+            ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
     end
 end
 
@@ -461,6 +466,64 @@ end
 function get_doutput_ca(comp::ADImplicitComp{<:MatrixFreeFlavor})
     dYX = get_dcombined_ca(comp)
     return ComponentArray(@view(dYX[comp.Y_range]), comp.Y_axes)
+end
+
+# ---------------------------------------------------------------------------
+# OpenMDAO `setup` machinery for `ADImplicitComp` (all flavors).
+# ---------------------------------------------------------------------------
+
+function get_units(comp::ADImplicitComp, varname)
+    return get(comp.units_dict, varname, "unitless")
+end
+
+function get_tags(comp::ADImplicitComp, varname)
+    return get(comp.tags_dict, varname, Vector{String}())
+end
+
+function get_input_var_data(self::ADImplicitComp)
+    ca = get_input_ca(self)
+    return [VarData(string(k);
+                    shape=size(ca[k]),
+                    val=ca[k],
+                    units=get_units(self, k),
+                    tags=get_tags(self, k)) for k in keys(ca)]
+end
+
+function get_output_var_data(self::ADImplicitComp)
+    ca = get_output_ca(self)
+    return [VarData(string(k);
+                    shape=size(ca[k]),
+                    val=ca[k],
+                    units=get_units(self, k),
+                    tags=get_tags(self, k)) for k in keys(ca)]
+end
+
+# Dense implicit components declare a single dense ("*", "*") partial.
+function get_partials_data(self::ADImplicitComp{DenseFlavor})
+    return [PartialsData("*", "*")]
+end
+
+# Matrix-free implicit components declare no partials; OpenMDAO discovers the
+# matrix-free API through the `apply_linear` method override in `omjlcomps`.
+function get_partials_data(self::ADImplicitComp{<:MatrixFreeFlavor})
+    return Vector{PartialsData}()
+end
+
+"""
+    setup(self::ADImplicitComp)
+
+Return `input_data`, `output_data`, and `partials_data` describing the implicit AD component to OpenMDAO.
+`input_data` and `output_data` are `Vector`s of [`VarData`](@ref) describing the inputs and state/output variables, respectively.
+`partials_data` describes the sub-Jacobians: a single dense (`"*", "*"`) entry for [`DenseFlavor`](@ref),
+per-entry `rows`/`cols` data for [`SparseFlavor`](@ref), and an empty `Vector` for the matrix-free flavors
+(which use the OpenMDAO matrix-free API via `apply_linear!` instead).
+"""
+function OpenMDAOCore.setup(self::ADImplicitComp)
+    input_data = get_input_var_data(self)
+    output_data = get_output_var_data(self)
+    partials_data = get_partials_data(self)
+
+    return input_data, output_data, partials_data
 end
 
 # ---------------------------------------------------------------------------

@@ -652,7 +652,7 @@ Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse 
 Note: `force_skip_prep=true` is not supported for `SparseFlavor`, since the sparsity pattern is extracted from the prep object.
 """
 function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
     if force_skip_prep
         throw(ArgumentError("force_skip_prep=true is not supported for the SparseFlavor ADImplicitComp, since the sparsity pattern of the Jacobian is extracted from the DifferentiationInterface prep object."))
     end
@@ -686,7 +686,7 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, a
     # "input" argument (`X_ca`).
     deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca)
 
-    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 """
@@ -698,7 +698,7 @@ Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse 
 Note: `force_skip_prep=true` is not supported for `SparseFlavor`, since the sparsity pattern is extracted from the prep object.
 """
 function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
     if force_skip_prep
         throw(ArgumentError("force_skip_prep=true is not supported for the SparseFlavor ADImplicitComp, since the sparsity pattern of the Jacobian is extracted from the DifferentiationInterface prep object."))
     end
@@ -723,7 +723,7 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, 
     R_ca = nothing
     R_ca_cs = nothing
 
-    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 # Compute dR/d(Y, X) with a single sparse `jacobian!` call, then scatter the
@@ -856,5 +856,37 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
 
     return nothing
 end
+
+# `get_partials_data` for implicit sparse components: one `PartialsData` entry
+# per (residual, wrt) pair in the sparsity pattern, with rows/cols translated
+# from Julia 1-based to Python 0-based indices (as the explicit version does).
+function OpenMDAOCore.get_partials_data(self::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor})
+    rcdict = OpenMDAOCore.get_rows_cols_dict(self)
+    partials_data = Vector{OpenMDAOCore.PartialsData}()
+    Y_ca = OpenMDAOCore.get_output_ca(self)
+    X_ca = OpenMDAOCore.get_input_ca(self)
+    y_keys = Set(Symbol.(keys(Y_ca)))
+    for (residual_name, wrt_name) in keys(rcdict)
+        rows, cols = rcdict[residual_name, wrt_name]
+
+        # The `of` side is always a residual, which has the same structure as
+        # the corresponding state/output variable.
+        output_idx_py = _get_py_indices(size(Y_ca[residual_name]))
+        rows0based = getindex.(Ref(output_idx_py), rows)
+
+        # The `wrt` side can be either a state (Y) or an input (X) variable.
+        if wrt_name in y_keys
+            wrt_idx_py = _get_py_indices(size(Y_ca[wrt_name]))
+        else
+            wrt_idx_py = _get_py_indices(size(X_ca[wrt_name]))
+        end
+        cols0based = getindex.(Ref(wrt_idx_py), cols)
+
+        push!(partials_data, OpenMDAOCore.PartialsData(string(residual_name), string(wrt_name); rows=rows0based, cols=cols0based))
+    end
+
+    return partials_data
+end
+
 
 end # module

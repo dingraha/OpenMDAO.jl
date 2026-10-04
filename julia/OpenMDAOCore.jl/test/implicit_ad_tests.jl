@@ -226,3 +226,86 @@ end
     comp4 = create_implicit_component(MatrixFreeReverseFlavor(), Val(true), ADTypes.AutoReverseDiff(), f_implicit!, Y_ca, X_ca)
     @test typeof(comp4) <: ADImplicitComp
 end
+
+@testitem "ADImplicitComp setup" begin
+    using OpenMDAOCore
+    using ADTypes: ADTypes
+    using ComponentArrays
+    using ForwardDiff
+    using SparseMatrixColorings
+    using ReverseDiff
+    using Test
+
+    # R = (Y^2 - X) * params[1], with a second residual wrt X: R2 = X * params[2]
+    function f_implicit2!(R, Y, X, params)
+        R[:y] = only(Y[:y])^2 - only(X[:x])
+        R[:r] = only(X[:x])
+        return nothing
+    end
+    function f_implicit2(Y, X, params)
+        return ComponentVector(y=only(Y[:y])^2 - only(X[:x]), r=only(X[:x]))
+    end
+
+    # Note: the residual has the same structure as the state vector, so `r`
+    # must be declared in `Y_ca` as well.
+    Y_ca = ComponentVector(y=1.0, r=0.0)
+    X_ca = ComponentVector(x=4.0)
+    units_dict = Dict(:x=>"m", :y=>"kg")
+    tags_dict = Dict(:x=>["my_input_tag"], :y=>["my_state_tag"])
+    kwargs = (params=[2, 3], units_dict=units_dict, tags_dict=tags_dict)
+
+    # --- VarData checks (same for every flavor) ---
+    function check_var_data(input_data, output_data)
+        @test [v.name for v in input_data] == ["x"]
+        @test [v.name for v in output_data] == ["y", "r"]
+        @test only(input_data).shape == ()
+        @test only(input_data).val == 4.0
+        @test only(input_data).units == "m"
+        @test only(input_data).tags == ["my_input_tag"]
+        @test output_data[1].shape == ()
+        @test output_data[1].val == 1.0
+        @test output_data[1].units == "kg"
+        @test output_data[1].tags == ["my_state_tag"]
+        @test output_data[2].units == "unitless"
+        @test output_data[2].tags == Vector{String}()
+    end
+
+    # --- Dense ---
+    comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
+    input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
+    check_var_data(input_data, output_data)
+    @test length(partials_data) == 1
+    @test partials_data[1].of == "*" && partials_data[1].wrt == "*"
+
+    # --- Sparse (automatic sparsity detection) ---
+    sparse_atol = 1e-10
+    sparsity_detector = PerturbedDenseSparsityDetector(ADTypes.AutoForwardDiff(); atol=sparse_atol, method=:direct)
+    coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
+    ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
+    comp = create_implicit_component(SparseFlavor(), Val(true), ad_backend, f_implicit2!, Y_ca, X_ca; kwargs...)
+    input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
+    check_var_data(input_data, output_data)
+    pairs = Set((pd.of, pd.wrt) for pd in partials_data)
+    @test ("y", "y") in pairs
+    @test ("y", "x") in pairs
+    @test ("r", "x") in pairs
+    @test ("r", "r") in pairs
+    # rows/cols are 0-based Python indices.
+    y_y = only(filter(pd -> (pd.of, pd.wrt) == ("y", "y"), partials_data))
+    @test y_y.rows == [0] && y_y.cols == [0]
+    r_x = only(filter(pd -> (pd.of, pd.wrt) == ("r", "x"), partials_data))
+    @test r_x.rows == [0] && r_x.cols == [0]
+
+    # --- Matrix-free (no declared partials; OpenMDAO uses the matrix-free API) ---
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
+    input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
+    check_var_data(input_data, output_data)
+    @test isempty(partials_data)
+
+    # --- Sparse out-of-place ---
+    comp = create_implicit_component(SparseFlavor(), Val(false), ad_backend, f_implicit2, Y_ca, X_ca; kwargs...)
+    input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
+    check_var_data(input_data, output_data)
+    pairs = Set((pd.of, pd.wrt) for pd in partials_data)
+    @test ("y", "y") in pairs && ("y", "x") in pairs
+end

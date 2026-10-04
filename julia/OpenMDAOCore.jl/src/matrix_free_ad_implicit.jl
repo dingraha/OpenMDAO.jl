@@ -16,7 +16,7 @@ Create an in-place [`MatrixFreeForwardFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.pushforward!`.
 """
 function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -42,7 +42,7 @@ function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{true}, ad_backend::TAD,
     deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_forward_prep_in_place(
         ad_backend, compute_adable, R_ca, YX_ca, force_skip_prep)
 
-    return ADImplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 """
@@ -52,7 +52,7 @@ Create an out-of-place [`MatrixFreeForwardFlavor`](@ref) [`ADImplicitComp`](@ref
 Derivatives are computed via `DifferentiationInterface.pushforward!`.
 """
 function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -73,7 +73,7 @@ function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{false}, ad_backend::TAD
 
     R_ca = R_ca_cs = nothing
 
-    return ADImplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 """
@@ -83,7 +83,7 @@ Create an in-place [`MatrixFreeReverseFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.pullback!`.
 """
 function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -109,7 +109,7 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{true}, ad_backend::TAD,
     deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_reverse_prep_in_place(
         ad_backend, compute_adable, R_ca, YX_ca, force_skip_prep)
 
-    return ADImplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 """
@@ -119,7 +119,7 @@ Create an out-of-place [`MatrixFreeReverseFlavor`](@ref) [`ADImplicitComp`](@ref
 Derivatives are computed via `DifferentiationInterface.pullback!`.
 """
 function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -140,7 +140,7 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{false}, ad_backend::TAD
 
     R_ca = R_ca_cs = nothing
 
-    return ADImplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 function _compute_implicit_pushforward!(comp::ADImplicitComp{MatrixFreeForwardFlavor, true}, inputs, outputs, dinputs, doutputs, dresids)

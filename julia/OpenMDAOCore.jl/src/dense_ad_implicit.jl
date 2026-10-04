@@ -21,7 +21,7 @@ Create an in-place [`DenseFlavor`](@ref) [`ADImplicitComp`](@ref).
 * `params`: parameters passed to the fourth argument to `f!`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
 """
-function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     # Check for name collisions between output and input keys.
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -54,7 +54,7 @@ function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::C
 
     deriv_prep, YX_ca_cs, R_ca_cs = _get_dense_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca, force_skip_prep)
 
-    return ADImplicitComp{DenseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{DenseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 """
@@ -72,7 +72,7 @@ Create an out-of-place [`DenseFlavor`](@ref) [`ADImplicitComp`](@ref).
 * `params`: parameters passed to the third argument to `f`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
 """
-function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     # Check for name collisions between output and input keys.
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -100,7 +100,7 @@ function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::C
     R_ca = nothing
     R_ca_cs = nothing
 
-    return ADImplicitComp{DenseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{DenseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 # Scatter the entries of the dense (R, YX) Jacobian `J_ca` into the `partials`
