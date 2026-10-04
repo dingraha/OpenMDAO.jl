@@ -14,7 +14,7 @@ using Zygote: Zygote
 
 using OpenMDAOCore: VarData, PartialsData,
     AbstractComp, AbstractExplicitComp, AbstractImplicitComp,
-    ADExplicitComp, create_explicit_component, create_implicit_component,
+    ADExplicitComp, ADImplicitComp, create_explicit_component, create_implicit_component,
     DenseFlavor, SparseFlavor, MatrixFreeForwardFlavor, MatrixFreeReverseFlavor,
     get_input_ca, get_output_ca, get_jacobian_ca, get_jacobian_ca,
     get_rows_cols, get_rows_cols_dict, get_rows_cols_dict_from_sparsity,
@@ -24,7 +24,7 @@ using OpenMDAOCore: VarData, PartialsData,
     PerturbedDenseSparsityDetector
 
 export f_simple!, f_simple, f_simple_no_params!,
-    f_implicit!, f_implicit,
+    f_implicit!, f_implicit, f_implicit_statics!, f_implicit_statics,
     do_compute_check, do_compute_partials_check,
     do_compute_jacvec_product_check_forward, do_compute_jacvec_product_check_reverse,
     do_compute_residuals_check, do_jvp_check, do_vjp_check,
@@ -33,6 +33,7 @@ export f_simple!, f_simple, f_simple_no_params!,
     AutosparseManualTestPrep, AutosparseManualShapeByConnTestPrep,
     AutosparseAutomaticTestPrep, AutosparseAutomaticShapeByConnTestPrep,
     AutoDenseImplicitTestPrep, AutoMatrixFreeImplicitTestPrep,
+    AutosparseImplicitManualTestPrep, AutosparseImplicitAutomaticTestPrep,
     doit_in_place, doit_out_of_place,
     doit_in_place_forward, doit_in_place_reverse,
     doit_out_of_place_forward, doit_out_of_place_reverse,
@@ -132,6 +133,51 @@ function f_implicit(Y, X, params)
     r_e = ((2*a^2) .+ 3.0.*b.^2.1 .+ 4.0.*sum(c.^2.2) .+ 5.0.*vec(sum(d.^2.3; dims=1))) .- e
     r_f = ((6*a^2.4) .+ 7.0.*reshape(b, 1, :).^2.5 .+ 8.0.*c.^2.6 .+ 9.0.*d.^2.7) .- f
     r_g = (10.0.*sin.(b).*cos.(PermutedDimsArray(d, (2, 1)))) .- g
+
+    return ComponentVector(e=r_e, f=r_f, g=r_g)
+end
+
+
+# Versions of the implicit functions whose f(X) part is multiplied by a
+# `statics` array (the `params` argument). These are used by the implicit
+# sparse tests, following OpenMDAO4Core.jl; bumping the `statics` entries
+# mid-test verifies that the component sees updated params values.
+function f_implicit_statics!(R, Y, X, statics)
+    a = only(X[:a])
+    b = @view X[:b]
+    c = @view X[:c]
+    d = @view X[:d]
+    e = @view Y[:e]
+    f = @view Y[:f]
+    g = @view Y[:g]
+    r_e = @view R[:e]
+    r_f = @view R[:f]
+    r_g = @view R[:g]
+
+    M, N = size(f)
+    for n in 1:N
+        r_e[n] = (2*a^2 + 3*b[n]^2.1 + 4*sum(c.^2.2) + 5*sum((@view d[:, n]).^2.3)) * statics[1] - e[n]
+        for m in 1:M
+            r_f[m, n] = (6*a^2.4 + 7*b[n]^2.5 + 8*c[m]^2.6 + 9*d[m, n]^2.7) * statics[2] - f[m, n]
+            r_g[n, m] = 10*sin(b[n])*cos(d[m, n]) * statics[3] - g[n, m]
+        end
+    end
+
+    return nothing
+end
+
+function f_implicit_statics(Y, X, statics)
+    a = only(X[:a])
+    b = @view X[:b]
+    c = @view X[:c]
+    d = @view X[:d]
+    e = @view Y[:e]
+    f = @view Y[:f]
+    g = @view Y[:g]
+
+    r_e = ((2*a^2) .+ 3.0.*b.^2.1 .+ 4.0.*sum(c.^2.2) .+ 5.0.*vec(sum(d.^2.3; dims=1))) .* statics[1] .- e
+    r_f = ((6*a^2.4) .+ 7.0.*reshape(b, 1, :).^2.5 .+ 8.0.*c.^2.6 .+ 9.0.*d.^2.7) .* statics[2] .- f
+    r_g = (10.0.*sin.(b).*cos.(PermutedDimsArray(d, (2, 1)))) .* statics[3] .- g
 
     return ComponentVector(e=r_e, f=r_f, g=r_g)
 end
@@ -1828,5 +1874,815 @@ function do_vjp_check(comp)
     # but we can at least verify the function executes without error
     @test true  # Placeholder - actual verification would require analytical derivatives
 end
+
+
+# ── Implicit sparse helpers (ported from OpenMDAO4Core.jl) ────────────────────
+
+# Check the residuals from `apply_nonlinear!` against the analytic solution.
+# `statics` is the `params` array passed to the component constructor; the
+# `f_implicit!`/`f_implicit` functions multiply the f(X) part of each residual
+# by `statics`.
+function do_compute_residuals_check(comp::AbstractImplicitComp, statics)
+    inputs_dict = ca2strdict(get_input_ca(comp))
+    M, N = size(inputs_dict["d"])
+    inputs_dict["a"] .= 2.0
+    inputs_dict["b"] .= range(3.0, 4.0; length=N)
+    inputs_dict["c"] .= range(5.0, 6.0; length=M)
+    inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    outputs_dict = ca2strdict(get_output_ca(comp))
+    outputs_dict["e"] .= range(9.0, 10.0; length=N)
+    outputs_dict["f"] .= reshape(range(11.0, 12.0; length=M*N), M, N)
+    outputs_dict["g"] .= reshape(range(13.0, 14.0; length=N*M), N, M)
+    residuals_dict = ca2strdict(get_residual_ca(comp))
+
+    OpenMDAOCore.apply_nonlinear!(comp, inputs_dict, outputs_dict, residuals_dict)
+
+    a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
+    e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
+    e_check = (2.0*a.^2 .+ 3 .* b.^2.1 .+ 4*sum(c.^2.2) .+ 5 .* sum(d.^2.3; dims=1)[:]) .* statics[1] .- e
+    f_check = (6.0*a.^2.4 .+ 7 .* reshape(b, 1, :).^2.5 .+ 8 .* c.^2.6 .+ 9 .* d.^2.7) .* statics[2] .- f
+    g_check = (10 .* sin.(b).*cos.(transpose(d))) .* statics[3] .- g
+    @test all(residuals_dict["e"] .≈ e_check)
+    @test all(residuals_dict["f"] .≈ f_check)
+    @test all(residuals_dict["g"] .≈ g_check)
+
+    return nothing
+end
+
+function do_compute_partials_check(comp::AbstractImplicitComp, statics)
+    sparse_jac = typeof(comp) <: ADImplicitComp{SparseFlavor}
+    inputs_dict = ca2strdict(get_input_ca(comp))
+    M, N = size(inputs_dict["d"])
+    inputs_dict["a"] .= 2.0
+    inputs_dict["b"] .= range(3.0, 4.0; length=N)
+    inputs_dict["c"] .= range(5.0, 6.0; length=M)
+    inputs_dict["d"] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    outputs_dict = ca2strdict(get_output_ca(comp))
+    outputs_dict["e"] .= range(9.0, 10.0; length=N)
+    outputs_dict["f"] .= reshape(range(11.0, 12.0; length=M*N), M, N)
+    outputs_dict["g"] .= reshape(range(13.0, 14.0; length=N*M), N, M)
+    residuals_dict = ca2strdict(get_residual_ca(comp))
+
+    inputs_dict_cs = ca2strdict(get_input_ca(ComplexF64, comp))
+    inputs_dict_cs["a"] .= inputs_dict["a"]
+    inputs_dict_cs["b"] .= inputs_dict["b"]
+    inputs_dict_cs["c"] .= inputs_dict["c"]
+    inputs_dict_cs["d"] .= inputs_dict["d"]
+    outputs_dict_cs = ca2strdict(get_output_ca(ComplexF64, comp))
+    outputs_dict_cs["e"] .= outputs_dict["e"]
+    outputs_dict_cs["f"] .= outputs_dict["f"]
+    outputs_dict_cs["g"] .= outputs_dict["g"]
+    residuals_dict_cs = ca2strdict(get_residual_ca(ComplexF64, comp))
+
+    # Complex step size.
+    h = 1e-10
+
+    J_ca = get_jacobian_ca(comp)
+
+    @test size(getdata(J_ca)) == (length(get_residual_ca(comp)), length(get_output_ca(comp))+length(get_input_ca(comp)))
+    if sparse_jac
+        @test issparse(getdata(J_ca))
+        # What should this be?
+        # It should be the same as the explicit case, but with the diagonal d[residual]/d[output] terms.
+        @test nnz(getdata(J_ca)) == N + N + N*M + N*M + M*N + M*N + M*N + M*N + N*M + N*M + N + M*N + N*M
+    end
+
+    if sparse_jac
+        rcdict = get_rows_cols_dict(comp)
+        partials_dict = rcdict2strdict(rcdict)
+    else
+        partials_dict = ca2strdict(J_ca)
+    end
+
+    # Actually do the compute_partials.
+    OpenMDAOCore.linearize!(comp, inputs_dict, outputs_dict, partials_dict)
+
+    a, b, c, d = getindex.(Ref(inputs_dict), ["a", "b", "c", "d"])
+    e, f, g = getindex.(Ref(outputs_dict), ["e", "f", "g"])
+
+    vals = partials_dict["e", "a"]
+    if sparse_jac
+        @test size(vals) == (N,)
+    else
+        @test size(vals) == (N, 1)
+    end
+    deda_check = zeros(N)
+    for n in 1:N
+        deda_check[n] = 4*only(a) * statics[1]
+    end
+    if sparse_jac
+        rows, cols = rcdict[:e, :a]
+        deda_check_sparse = sparse(reshape(deda_check, N))
+        # `e` is a vector of length `N` and `a` is scalar, so the Jacobian isn't actually a Matrix (and isn't really sparse).
+        rows_check, vals_check = findnz(deda_check_sparse)
+        cols_check = fill(1, N)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        vals_check = deda_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
+    OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+    for n in 1:N
+        @test imag(residuals_dict_cs["e"][n])/h ≈ deda_check[n]
+    end
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1]
+
+    dedb_check = zeros(N, N)
+    for n in 1:N
+        dedb_check[n, n] = (3*2.1)*b[n]^1.1 * statics[1]
+    end
+    vals = partials_dict["e", "b"]
+    if sparse_jac
+        @test size(vals) == (N,)
+        rows, cols = rcdict[:e, :b]
+        dedb_check_sparse = sparse(reshape(dedb_check, N, N))
+        rows_check, cols_check, vals_check = findnz(dedb_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(e)..., size(b)...)
+        vals_check = dedb_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        @test imag(residuals_dict_cs["e"][n])/h ≈ dedb_check[n, n]
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n]
+    end
+
+    dedc_check = zeros(N, M)
+    for m in 1:M
+        for n in 1:N
+            dedc_check[n, m] = (4*2.2)*c[m]^1.2 * statics[1]
+        end
+    end
+    vals = partials_dict["e", "c"]
+    if sparse_jac
+        @test size(vals) == (N*M,)
+        rows, cols = rcdict[:e, :c]
+        dedc_check_sparse = sparse(reshape(dedc_check, N, M))
+        rows_check, cols_check, vals_check = findnz(dedc_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(e)..., size(c)...)
+        vals_check = dedc_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for m in 1:M
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for n in 1:N
+            @test imag(residuals_dict_cs["e"][n])/h ≈ dedc_check[n, m]
+        end
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m]
+    end
+
+    dedd_check = zeros(N, M, N)
+    for n in 1:N
+        for m in 1:M
+            dedd_check[n, m, n] = (5*2.3)*d[m, n]^1.3 * statics[1]
+        end
+    end
+    vals = partials_dict["e", "d"]
+    if sparse_jac
+        @test size(vals) == (M*N,)
+        rows, cols = rcdict[:e, :d]
+        dedd_check_sparse = sparse(reshape(dedd_check, N, M*N))
+        rows_check, cols_check, vals_check = findnz(dedd_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(e)..., size(d)...)
+        vals_check = dedd_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["e"][n])/h ≈ dedd_check[n, m, n]
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
+        end
+    end
+
+    dede_check = zeros(N, N)
+    for n in 1:N
+        dede_check[n, n] = -1
+    end
+    vals = partials_dict["e", "e"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented"
+        @test size(vals) == (N,)
+        rows, cols = rcdict[:e, :e]
+        dede_check_sparse = sparse(dede_check)
+        rows_check, cols_check, vals_check = findnz(dede_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(e)..., size(e)...)
+        vals_check = dede_check
+    end
+    @test all(vals .≈ vals_check)
+    for n in 1:N
+        outputs_dict_cs["e"][n] = outputs_dict["e"][n] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        @test imag(residuals_dict_cs["e"][n])/h ≈ dede_check[n, n]
+        outputs_dict_cs["e"][n] = outputs_dict["e"][n]
+    end
+
+    dedf_check = zeros(N, M, N)
+    vals = partials_dict["e", "f"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented"
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:e, :f]
+        dedf_check_sparse = sparse(reshape(dedf_check, N, M*N))
+        rows_check, cols_check, vals_check = findnz(dedf_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(e)..., size(f)...)
+        vals_check = dedf_check
+    end
+    @test all(vals .≈ vals_check)
+    for n in 1:N
+        for m in 1:N
+            outputs_dict_cs["f"][m, n] = outputs_dict["f"][m, n] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["e"][n])/h ≈ dedf_check[n, m, n]
+            outputs_dict_cs["f"][m, n] = outputs_dict["f"][m, n]
+        end
+    end
+
+    dedg_check = zeros(N, N, M)
+    vals = partials_dict["e", "g"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented"
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:e, :g]
+        dedg_check_sparse = sparse(reshape(dedg_check, N, N*M))
+        rows_check, cols_check, vals_check = findnz(dedg_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(e)..., size(g)...)
+        vals_check = dedg_check
+    end
+    @test all(vals .≈ vals_check)
+    for m in 1:N
+        for n in 1:N
+            outputs_dict_cs["g"][n, m] = outputs_dict["g"][n, m] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["e"][n])/h ≈ dedg_check[n, n, m]
+            outputs_dict_cs["f"][n, m] = outputs_dict["f"][n, m]
+        end
+    end
+
+    dfda_check = zeros(M, N)
+    for m in 1:M
+        for n in 1:N
+            dfda_check[m, n] = (6*2.4)*only(a)^1.4 * statics[2]
+        end
+    end
+    vals = partials_dict["f", "a"]
+    if sparse_jac
+        @test size(vals) == (M*N,)
+        rows, cols = rcdict[:f, :a]
+        dfda_check_sparse = sparse(reshape(dfda_check, M*N, 1))
+        rows_check, cols_check, vals_check = findnz(dfda_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == size(f)
+        vals_check = dfda_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
+    OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+    for n in 1:N
+        for m in 1:N
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfda_check[m, n]
+        end
+    end
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1]
+
+    dfdb_check = zeros(M, N, N)
+    for n in 1:N
+        for m in 1:M
+            dfdb_check[m, n, n] = (7*2.5)*b[n]^1.5 * statics[2]
+        end
+    end
+    vals = partials_dict["f", "b"]
+    if sparse_jac
+        @test size(vals) == (M*N,)
+        rows, cols = rcdict[:f, :b]
+        dfdb_check_sparse = sparse(reshape(dfdb_check, M*N, N))
+        rows_check, cols_check, vals_check = findnz(dfdb_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(f)..., size(b)...)
+        vals_check = dfdb_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for m in 1:M
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfdb_check[m, n, n]
+        end
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n]
+    end
+
+    dfdc_check = zeros(M, N, M)
+    for n in 1:N
+        for m in 1:M
+            dfdc_check[m, n, m] = (8*2.6)*c[m]^1.6 * statics[2]
+        end
+    end
+    vals = partials_dict["f", "c"]
+    if sparse_jac
+        @test size(vals) == (M*N,)
+        rows, cols = rcdict[:f, :c]
+        dfdc_check_sparse = sparse(reshape(dfdc_check, M*N, M))
+        rows_check, cols_check, vals_check = findnz(dfdc_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(f)..., size(c)...)
+        vals_check = dfdc_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for m in 1:M
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for n in 1:N
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfdc_check[m, n, m]
+        end
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m]
+    end
+
+    dfdd_check = zeros(M, N, M, N)
+    for n in 1:N
+        for m in 1:M
+            dfdd_check[m, n, m, n] = (9*2.7)*d[m, n]^1.7 * statics[2]
+        end
+    end
+    vals = partials_dict["f", "d"]
+    if sparse_jac
+        @test size(vals) == (M*N,)
+        rows, cols = rcdict[:f, :d]
+        dfdd_check_sparse = sparse(reshape(dfdd_check, M*N, M*N))
+        rows_check, cols_check, vals_check = findnz(dfdd_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(f)..., size(d)...)
+        vals_check = dfdd_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfdd_check[m, n, m, n]
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
+        end
+    end
+
+    dfde_check = zeros(M, N, N)
+    vals = partials_dict["f", "e"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented yet"
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:f, :e]
+        dfde_check_sparse = sparse(reshape(dfde_check, M*N, N))
+        rows_check, cols_check, vals_check = findnz(dfde_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(f)..., size(e)...)
+        vals_check = dfde_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        outputs_dict_cs["e"][n] = outputs_dict["e"][n] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for m in 1:M
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfde_check[m, n, n]
+        end
+        outputs_dict_cs["e"][n] = outputs_dict["e"][n]
+    end
+
+    dfdf_check = zeros(M, N, M, N)
+    for n in 1:N
+        for m in 1:M
+            dfdf_check[m, n, m, n] = -1
+        end
+    end
+    vals = partials_dict["f", "f"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented yet"
+        @test size(vals) == (M*N,)
+        rows, cols = rcdict[:f, :f]
+        dfdf_check_sparse = sparse(reshape(dfdf_check, M*N, M*N))
+        rows_check, cols_check, vals_check = findnz(dfdf_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(f)..., size(f)...)
+        vals_check = dfdf_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            outputs_dict_cs["f"][m, n] = outputs_dict["f"][m, n] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfdf_check[m, n, m, n]
+            outputs_dict_cs["f"][m, n] = outputs_dict["f"][m, n]
+        end
+    end
+
+    dfdg_check = zeros(M, N, N, M)
+    vals = partials_dict["f", "g"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented yet"
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:f, :g]
+        dfdg_check_sparse = sparse(reshape(dfdg_check, M*N, N*M))
+        rows_check, cols_check, vals_check = findnz(dfdg_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(f)..., size(g)...)
+        vals_check = dfdg_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            outputs_dict_cs["g"][n, m] = outputs_dict["g"][n, m] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["f"][m, n])/h ≈ dfdg_check[m, n, n, m]
+            outputs_dict_cs["g"][n, m] = outputs_dict["g"][n, m]
+        end
+    end
+
+    vals = partials_dict["g", "a"]
+    if sparse_jac
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:g, :a]
+        @test rows == Vector{Int}()
+        @test cols == Vector{Int}()
+        @test eltype(vals) == Float64
+    else
+        @test size(vals) == size(g)
+        @test all(vals .≈ 0)
+    end
+    # Check with complex step.
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1] + im*h
+    OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+    for m in 1:M
+        for n in 1:N
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ 0
+        end
+    end
+    inputs_dict_cs["a"][1] = inputs_dict["a"][1]
+
+    dgdb_check = zeros(N, M, N)
+    for m in 1:M
+        for n in 1:N
+            dgdb_check[n, m, n] = 10*cos(b[n])*cos(d[m, n]) * statics[3]
+        end
+    end
+    vals = partials_dict["g", "b"]
+    if sparse_jac
+        @test size(vals) == (N*M,)
+        rows, cols = rcdict[:g, :b]
+        dgdb_check_sparse = sparse(reshape(dgdb_check, N*M, N))
+        rows_check, cols_check, vals_check = findnz(dgdb_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(g)..., size(b)...)
+        vals_check = dgdb_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for m in 1:M
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ dgdb_check[n, m, n]
+        end
+        inputs_dict_cs["b"][n] = inputs_dict["b"][n]
+    end
+
+    vals = partials_dict["g", "c"]
+    if sparse_jac
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:g, :c]
+        @test rows == Vector{Int}()
+        @test cols == Vector{Int}()
+        @test eltype(vals) == Float64
+    else
+        @test size(vals) == (size(g)..., size(c)...)
+        @test all(vals .≈ 0)
+    end
+    # Check with complex step.
+    for m in 1:M
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for n in 1:N
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ 0
+        end
+        inputs_dict_cs["c"][m] = inputs_dict["c"][m]
+    end
+
+    dgdd_check = zeros(N, M, M, N)
+    for m in 1:M
+        for n in 1:N
+            dgdd_check[n, m, m, n] = -10*sin(b[n])*sin(d[m, n]) * statics[3]
+        end
+    end
+    vals = partials_dict["g", "d"]
+    if sparse_jac
+        @test size(vals) == (N*M,)
+        rows, cols = rcdict[:g, :d]
+        dgdd_check_sparse = sparse(reshape(dgdd_check, N*M, M*N))
+        rows_check, cols_check, vals_check = findnz(dgdd_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(g)..., size(d)...)
+        vals_check = dgdd_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ dgdd_check[n, m, m, n]
+            inputs_dict_cs["d"][m, n] = inputs_dict["d"][m, n]
+        end
+    end
+
+    dgde_check = zeros(N, M, N)
+    vals = partials_dict["g", "e"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented yet"
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:g, :e]
+        dgde_check_sparse = sparse(reshape(dgde_check, N*M, N))
+        rows_check, cols_check, vals_check = findnz(dgde_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(g)..., size(e)...)
+        vals_check = dgde_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        outputs_dict_cs["e"][n] = outputs_dict["e"][n] + im*h
+        OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+        for m in 1:M
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ dgde_check[n, m, n]
+        end
+        outputs_dict_cs["e"][n] = outputs_dict["e"][n]
+    end
+
+    dgdf_check = zeros(N, M, M, N)
+    vals = partials_dict["g", "f"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented yet"
+        @test size(vals) == (0,)
+        rows, cols = rcdict[:g, :f]
+        dgdf_check_sparse = sparse(reshape(dgdf_check, N*M, M*N))
+        rows_check, cols_check, vals_check = findnz(dgdf_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(g)..., size(f)...)
+        vals_check = dgdf_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            outputs_dict_cs["f"][m, n] = outputs_dict["f"][m, n] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ dgdf_check[n, m, m, n]
+            outputs_dict_cs["f"][m, n] = outputs_dict["f"][m, n]
+        end
+    end
+
+    dgdg_check = zeros(N, M, N, M)
+    for m in 1:M
+        for n in 1:N
+            dgdg_check[n, m, n, m] = -1
+        end
+    end
+    vals = partials_dict["g", "g"]
+    if sparse_jac
+        # @error "sparse_jac = $(sparse_jac) not implemented yet"
+        @test size(vals) == (N*M,)
+        rows, cols = rcdict[:g, :g]
+        dgdg_check_sparse = sparse(reshape(dgdg_check, N*M, N*M))
+        rows_check, cols_check, vals_check = findnz(dgdg_check_sparse)
+        @test all(rows .== rows_check)
+        @test all(cols .== cols_check)
+    else
+        @test size(vals) == (size(g)..., size(g)...)
+        vals_check = dgdg_check
+    end
+    @test all(vals .≈ vals_check)
+    # Check with complex step.
+    for n in 1:N
+        for m in 1:M
+            outputs_dict_cs["g"][n, m] = outputs_dict["g"][n, m] + im*h
+            OpenMDAOCore.apply_nonlinear!(comp, inputs_dict_cs, outputs_dict_cs, residuals_dict_cs)
+            @test imag(residuals_dict_cs["g"][n, m])/h ≈ dgdg_check[n, m, n, m]
+            outputs_dict_cs["g"][n, m] = outputs_dict["g"][n, m]
+        end
+    end
+
+    return nothing
+end
+
+
+# ── Implicit sparse prep structs (ported from OpenMDAO4Core.jl) ───────────────
+# Note: these use the `params` keyword argument and `Val{true/false}` in-place
+# flags, following OpenMDAOCore.jl's `create_implicit_component` API, rather
+# than OpenMDAO4Core.jl's `statics`/`in_place` keywords.
+
+struct AutosparseImplicitManualTestPrep{TXCA,TYCA,TJCA,TAD}
+    M::Int
+    N::Int
+    X_ca::TXCA
+    Y_ca::TYCA
+    J_ca::TJCA
+    ad_backend::TAD
+end
+
+function AutosparseImplicitManualTestPrep(M, N, ad_type)
+    X_ca = ComponentVector(a=zero(Float64), b=zeros(Float64, N), c=zeros(Float64, M), d=zeros(Float64, M, N))
+    Y_ca = ComponentVector(e=zeros(Float64, N), f=zeros(Float64, M, N), g=zeros(Float64, N, M))
+    X_ca[:a] = 2.0
+    X_ca[:b] .= range(3.0, 4.0; length=N)
+    X_ca[:c] .= range(5.0, 6.0; length=M)
+    X_ca[:d] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    Y_ca[:e] .= range(9.0, 10.0; length=N)
+    Y_ca[:f] .= reshape(range(11.0, 12.0; length=M*N), M, N)
+    Y_ca[:g] .= reshape(range(13.0, 14.0; length=N*M), N, M)
+    YX_ca = ComponentVector(; (k => Y_ca[k] for k in keys(Y_ca))..., (k => X_ca[k] for k in keys(X_ca))...)
+    R_ca = similar(Y_ca)
+    J_ca = R_ca .* YX_ca'
+    J_ca .= 0.0
+    for n in 1:N
+        @view(J_ca[:e, :e])[n, n] = 1.0
+    end
+    for n in 1:N
+        for m in 1:M
+            @view(J_ca[:f, :f])[m, n, m, n] = 1.0
+        end
+    end
+    for n in 1:N
+        for m in 1:M
+            @view(J_ca[:g, :g])[n, m, n, m] = 1.0
+        end
+    end
+    for n in 1:N
+        @view(J_ca[:e, :a])[n] = 1.0
+        @view(J_ca[:e, :b])[n, n] = 1.0
+        for m in 1:M
+            @view(J_ca[:e, :c])[n, m] = 1.0
+            @view(J_ca[:e, :d])[n, m, n] = 1.0
+        end
+    end
+    for n in 1:N
+        for m in 1:M
+            @view(J_ca[:f, :a])[m, n] = 1.0
+            @view(J_ca[:f, :b])[m, n, n] = 1.0
+            @view(J_ca[:f, :c])[m, n, m] = 1.0
+            @view(J_ca[:f, :d])[m, n, m, n] = 1.0
+        end
+    end
+    for n in 1:N
+        for m in 1:M
+            @view(J_ca[:g, :b])[n, m, n] = 1.0
+            @view(J_ca[:g, :d])[n, m, m, n] = 1.0
+        end
+    end
+    if ad_type == "forwarddiff"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=ADTypes.KnownJacobianSparsityDetector(sparse(getdata(J_ca))), coloring_algorithm=SparseMatrixColorings.GreedyColoringAlgorithm())
+    elseif ad_type == "reversediff"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoReverseDiff(); sparsity_detector=ADTypes.KnownJacobianSparsityDetector(sparse(getdata(J_ca))), coloring_algorithm=SparseMatrixColorings.GreedyColoringAlgorithm())
+    elseif ad_type == "enzymeforward"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoEnzyme(; mode=EnzymeCore.Forward); sparsity_detector=ADTypes.KnownJacobianSparsityDetector(sparse(getdata(J_ca))), coloring_algorithm=SparseMatrixColorings.GreedyColoringAlgorithm())
+    elseif ad_type == "enzymereverse"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoEnzyme(; mode=EnzymeCore.Reverse); sparsity_detector=ADTypes.KnownJacobianSparsityDetector(sparse(getdata(J_ca))), coloring_algorithm=SparseMatrixColorings.GreedyColoringAlgorithm())
+    elseif ad_type == "zygote"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoZygote(); sparsity_detector=ADTypes.KnownJacobianSparsityDetector(sparse(getdata(J_ca))), coloring_algorithm=SparseMatrixColorings.GreedyColoringAlgorithm())
+    else
+        error("unexpected ad_type = $(ad_type)")
+    end
+    return AutosparseImplicitManualTestPrep(M, N, X_ca, Y_ca, J_ca, ad_backend)
+end
+
+function doit_in_place(prep::AutosparseImplicitManualTestPrep)
+    statics = [2, 3, 4]
+    comp = create_implicit_component(SparseFlavor(), Val(true), prep.ad_backend, f_implicit_statics!, prep.Y_ca, prep.X_ca; params=statics)
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+    statics .+= 1
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+end
+
+function doit_out_of_place(prep::AutosparseImplicitManualTestPrep)
+    statics = [2, 3, 4]
+    comp = create_implicit_component(SparseFlavor(), Val(false), prep.ad_backend, f_implicit_statics, prep.Y_ca, prep.X_ca; params=statics)
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+    statics .+= 1
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+end
+
+struct AutosparseImplicitAutomaticTestPrep{TXCA,TYCA,TAD}
+    M::Int
+    N::Int
+    X_ca::TXCA
+    Y_ca::TYCA
+    ad_backend::TAD
+end
+
+function AutosparseImplicitAutomaticTestPrep(M, N, ad_type)
+    X_ca = ComponentVector(a=zero(Float64), b=zeros(Float64, N), c=zeros(Float64, M), d=zeros(Float64, M, N))
+    Y_ca = ComponentVector(e=zeros(Float64, N), f=zeros(Float64, M, N), g=zeros(Float64, N, M))
+    X_ca[:a] = 2.0
+    X_ca[:b] .= range(3.0, 4.0; length=N)
+    X_ca[:c] .= range(5.0, 6.0; length=M)
+    X_ca[:d] .= reshape(range(7.0, 8.0; length=M*N), M, N)
+    Y_ca[:e] .= range(9.0, 10.0; length=N)
+    Y_ca[:f] .= reshape(range(11.0, 12.0; length=M*N), M, N)
+    Y_ca[:g] .= reshape(range(13.0, 14.0; length=N*M), N, M)
+    # Use OpenMDAOCore.jl's own sparsity detector, like the explicit autosparse
+    # automatic tests do, rather than om4's SparseConnectivityTracer.
+    sparse_atol = 1e-10
+    sparsity_detector = PerturbedDenseSparsityDetector(ADTypes.AutoForwardDiff(); atol=sparse_atol, method=:direct)
+    coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
+    if ad_type == "forwarddiff"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
+    elseif ad_type == "reversediff"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoReverseDiff(); sparsity_detector, coloring_algorithm)
+    elseif ad_type == "enzymeforward"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoEnzyme(; mode=EnzymeCore.Forward); sparsity_detector, coloring_algorithm)
+    elseif ad_type == "enzymereverse"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoEnzyme(; mode=EnzymeCore.Reverse); sparsity_detector, coloring_algorithm)
+    elseif ad_type == "zygote"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoZygote(); sparsity_detector, coloring_algorithm)
+    else
+        error("unexpected ad_type = $(ad_type)")
+    end
+    return AutosparseImplicitAutomaticTestPrep(M, N, X_ca, Y_ca, ad_backend)
+end
+
+function doit_in_place(prep::AutosparseImplicitAutomaticTestPrep)
+    statics = [2, 3, 4]
+    comp = create_implicit_component(SparseFlavor(), Val(true), prep.ad_backend, f_implicit_statics!, prep.Y_ca, prep.X_ca; params=statics)
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+    statics .+= 1
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+end
+
+function doit_out_of_place(prep::AutosparseImplicitAutomaticTestPrep)
+    statics = [2, 3, 4]
+    comp = create_implicit_component(SparseFlavor(), Val(false), prep.ad_backend, f_implicit_statics, prep.Y_ca, prep.X_ca; params=statics)
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+    statics .+= 1
+    do_compute_residuals_check(comp, statics)
+    do_compute_partials_check(comp, statics)
+end
+
 
 end # module

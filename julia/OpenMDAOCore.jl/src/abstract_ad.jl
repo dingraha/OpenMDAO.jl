@@ -472,7 +472,81 @@ has_apply_nonlinear(self::ADImplicitComp{DenseFlavor}) = true
 has_linearize(self::ADImplicitComp{DenseFlavor}) = true
 has_apply_linear(self::ADImplicitComp{DenseFlavor}) = false
 
+# Sparse: support apply_nonlinear + linearize, not apply_linear (matrix-free).
+# The `ADImplicitComp{SparseFlavor}` constructors and the `linearize!` methods
+# are provided by the `OpenMDAOCoreSparseMatrixColoringsExt` extension.
+has_apply_nonlinear(self::ADImplicitComp{SparseFlavor}) = true
+has_linearize(self::ADImplicitComp{SparseFlavor}) = true
+has_apply_linear(self::ADImplicitComp{SparseFlavor}) = false
+
 # Matrix-free: support apply_nonlinear + apply_linear, not linearize (assembled).
 has_apply_nonlinear(self::ADImplicitComp{<:MatrixFreeFlavor}) = true
 has_linearize(self::ADImplicitComp{<:MatrixFreeFlavor}) = false
 has_apply_linear(self::ADImplicitComp{<:MatrixFreeFlavor}) = true
+
+# ---------------------------------------------------------------------------
+# `apply_nonlinear!` — shared by all implicit AD flavors.
+#
+# The residual is computed by calling the `compute_adable` closure directly;
+# this is the same for every flavor, since only the *derivative* computation
+# differs between them.
+# ---------------------------------------------------------------------------
+
+function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, true}, inputs, outputs, residuals)
+    TF = eltype(valtype(inputs))
+    YX_ca = get_combined_ca(TF, comp)
+    R_ca = get_residual_ca(TF, comp)
+
+    # Copy outputs (states) and inputs into the combined YX vector
+    for uname in output_keys(comp)
+        @view(YX_ca[uname]) .= outputs[string(uname)]
+    end
+    for iname in input_keys(comp)
+        @view(YX_ca[iname]) .= inputs[string(iname)]
+    end
+
+    # Call the compute_adable closure directly.
+    f! = get_callback(comp)
+    f!(R_ca, YX_ca)
+
+    # Scatter R_ca back to the residuals dict.
+    for rname in keys(R_ca)
+        rstr = string(rname)
+        if typeof(residuals[rstr]) <: AbstractArray
+            residuals[rstr] .= @view(R_ca[rname])
+        else
+            residuals[rstr] = only(R_ca[rname])
+        end
+    end
+
+    return nothing
+end
+
+function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, false}, inputs, outputs, residuals)
+    TF = eltype(valtype(inputs))
+    YX_ca = get_combined_ca(TF, comp)
+
+    # Copy outputs (states) and inputs into the combined YX vector
+    for uname in output_keys(comp)
+        @view(YX_ca[uname]) .= outputs[string(uname)]
+    end
+    for iname in input_keys(comp)
+        @view(YX_ca[iname]) .= inputs[string(iname)]
+    end
+
+    # Call the out-of-place closure and scatter the result.
+    f = get_callback(comp)
+    R_ca = f(YX_ca)
+
+    # Scatter R_ca back to the residuals dict.
+    for rname in keys(R_ca)
+        rstr = string(rname)
+        if typeof(residuals[rstr]) <: AbstractArray
+            residuals[rstr] .= @view(R_ca[rname])
+        else
+            residuals[rstr] = only(R_ca[rname])
+        end
+    end
+
+    return nothing
+end

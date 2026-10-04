@@ -1,6 +1,6 @@
 module OpenMDAOCoreSparseMatrixColoringsExt
 
-using ComponentArrays: ComponentVector, ComponentMatrix, getaxes, getdata
+using ComponentArrays: ComponentArray, ComponentVector, ComponentMatrix, getaxes, getdata
 using ADTypes: ADTypes
 using DifferentiationInterface: DifferentiationInterface
 using SparseArrays: sparse, findnz, nonzeros, AbstractSparseArray
@@ -624,6 +624,231 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
                 Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
 
                 # Now write the non-zero entries to Jsub_out_vec.
+                Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
+            end
+        end
+    end
+
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
+# ADImplicitComp{SparseFlavor} — implicit sparse AD components.
+#
+# As with the explicit sparse components, the `ADImplicitComp{SparseFlavor}`
+# *type* and the `has_*` methods are declared in the main package, and the
+# constructors and the `linearize!` methods are provided here.
+# ---------------------------------------------------------------------------
+
+OpenMDAOCore.get_jacobian_ca(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor}) = comp.deriv_prep.J_ca_sparse
+OpenMDAOCore.get_rows_cols_dict(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor}) = comp.deriv_prep.rcdict
+
+"""
+    ADImplicitComp(::SparseFlavor, ::Val{true}, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+
+Create an in-place [`SparseFlavor`](@ref) [`ADImplicitComp`](@ref).
+Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse Jacobian.
+
+Note: `force_skip_prep=true` is not supported for `SparseFlavor`, since the sparsity pattern is extracted from the prep object.
+"""
+function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+    if force_skip_prep
+        throw(ArgumentError("force_skip_prep=true is not supported for the SparseFlavor ADImplicitComp, since the sparsity pattern of the Jacobian is extracted from the DifferentiationInterface prep object."))
+    end
+
+    common_keys = intersect(keys(Y_ca), keys(X_ca))
+    if !isempty(common_keys)
+        throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
+    end
+
+    YX_ca = ComponentVector(; (k => Y_ca[k] for k in keys(Y_ca))..., (k => X_ca[k] for k in keys(X_ca))...)
+    Y_range = 1:length(Y_ca)
+    X_range = length(Y_ca)+1:length(YX_ca)
+    Y_axes = getaxes(Y_ca)
+    X_axes = getaxes(X_ca)
+
+    compute_adable = let params=params, Y_range=Y_range, X_range=X_range, Y_axes=Y_axes, X_axes=X_axes
+        (R, YX) -> begin
+            Y = ComponentArray(@view(YX[Y_range]), Y_axes)
+            X = ComponentArray(@view(YX[X_range]), X_axes)
+            f!(R, Y, X, params)
+            return nothing
+        end
+    end
+
+    R_ca = similar(Y_ca)
+
+    # The explicit sparse prep builder works for implicit components, too:
+    # the implicit `compute_adable(R, YX)` closure already has
+    # DifferentiationInterface's in-place (`f!(y, x)`) form, so we pass `R_ca`
+    # as the "output" argument (`Y_ca`) and the combined `YX_ca` as the
+    # "input" argument (`X_ca`).
+    deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca)
+
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+end
+
+"""
+    ADImplicitComp(::SparseFlavor, ::Val{false}, ad_backend, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+
+Create an out-of-place [`SparseFlavor`](@ref) [`ADImplicitComp`](@ref).
+Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse Jacobian.
+
+Note: `force_skip_prep=true` is not supported for `SparseFlavor`, since the sparsity pattern is extracted from the prep object.
+"""
+function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+    if force_skip_prep
+        throw(ArgumentError("force_skip_prep=true is not supported for the SparseFlavor ADImplicitComp, since the sparsity pattern of the Jacobian is extracted from the DifferentiationInterface prep object."))
+    end
+
+    common_keys = intersect(keys(Y_ca), keys(X_ca))
+    if !isempty(common_keys)
+        throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
+    end
+
+    YX_ca = ComponentVector(; (k => Y_ca[k] for k in keys(Y_ca))..., (k => X_ca[k] for k in keys(X_ca))...)
+    Y_range = 1:length(Y_ca)
+    X_range = length(Y_ca)+1:length(YX_ca)
+    Y_axes = getaxes(Y_ca)
+    X_axes = getaxes(X_ca)
+
+    compute_adable = let params=params, Y_range=Y_range, X_range=X_range, Y_axes=Y_axes, X_axes=X_axes
+        YX -> f(ComponentArray(@view(YX[Y_range]), Y_axes), ComponentArray(@view(YX[X_range]), X_axes), params)
+    end
+
+    deriv_prep, YX_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, YX_ca)
+
+    R_ca = nothing
+    R_ca_cs = nothing
+
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
+end
+
+# Compute dR/d(Y, X) with a single sparse `jacobian!` call, then scatter the
+# sub-Jacobians to the `partials` dict using the sparsity pattern.
+function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}, inputs, outputs, partials)
+    YX_ca = OpenMDAOCore.get_combined_ca(comp)
+    okeys = OpenMDAOCore.output_keys(comp)
+    ikeys = OpenMDAOCore.input_keys(comp)
+    for uname in okeys
+        @view(YX_ca[uname]) .= outputs[string(uname)]
+    end
+    for iname in ikeys
+        @view(YX_ca[iname]) .= inputs[string(iname)]
+    end
+
+    f! = OpenMDAOCore.get_callback(comp)
+    R_ca = OpenMDAOCore.get_residual_ca(comp)
+    J_ca = OpenMDAOCore.get_jacobian_ca(comp)
+    prep = OpenMDAOCore.get_prep(comp)
+    ad_backend = OpenMDAOCore.get_backend(comp)
+    DifferentiationInterface.jacobian!(f!, R_ca, J_ca, prep, ad_backend, YX_ca)
+
+    rcdict = OpenMDAOCore.get_rows_cols_dict(comp)
+    R_axis, YX_axis = getaxes(J_ca)
+    for rname in keys(R_axis)
+        rstr = string(rname)
+
+        # dR/dY block
+        for uname in okeys
+            ustr = string(uname)
+            Jsub_in = @view(J_ca[rname, uname])
+            nrows = length(R_axis[rname])
+            ncols = length(YX_axis[uname])
+            Jsub_in_reshape = reshape(Jsub_in, nrows, ncols)
+            rows, cols = rcdict[rname, uname]
+            local Jsub_out
+            try
+                Jsub_out = partials[rstr, ustr]
+            catch e
+                isa(e, KeyError) || rethrow()
+            else
+                Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
+                Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
+            end
+        end
+
+        # dR/dX block
+        for iname in ikeys
+            istr = string(iname)
+            Jsub_in = @view(J_ca[rname, iname])
+            nrows = length(R_axis[rname])
+            ncols = length(YX_axis[iname])
+            Jsub_in_reshape = reshape(Jsub_in, nrows, ncols)
+            rows, cols = rcdict[rname, iname]
+            local Jsub_out
+            try
+                Jsub_out = partials[rstr, istr]
+            catch e
+                isa(e, KeyError) || rethrow()
+            else
+                Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
+                Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
+            end
+        end
+    end
+
+    return nothing
+end
+
+function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}, inputs, outputs, partials)
+    YX_ca = OpenMDAOCore.get_combined_ca(comp)
+    okeys = OpenMDAOCore.output_keys(comp)
+    ikeys = OpenMDAOCore.input_keys(comp)
+    for uname in okeys
+        @view(YX_ca[uname]) .= outputs[string(uname)]
+    end
+    for iname in ikeys
+        @view(YX_ca[iname]) .= inputs[string(iname)]
+    end
+
+    f = OpenMDAOCore.get_callback(comp)
+    J_ca = OpenMDAOCore.get_jacobian_ca(comp)
+    prep = OpenMDAOCore.get_prep(comp)
+    ad_backend = OpenMDAOCore.get_backend(comp)
+    DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, YX_ca)
+
+    rcdict = OpenMDAOCore.get_rows_cols_dict(comp)
+    R_axis, YX_axis = getaxes(J_ca)
+    for rname in keys(R_axis)
+        rstr = string(rname)
+
+        # dR/dY block
+        for uname in okeys
+            ustr = string(uname)
+            Jsub_in = @view(J_ca[rname, uname])
+            nrows = length(R_axis[rname])
+            ncols = length(YX_axis[uname])
+            Jsub_in_reshape = reshape(Jsub_in, nrows, ncols)
+            rows, cols = rcdict[rname, uname]
+            local Jsub_out
+            try
+                Jsub_out = partials[rstr, ustr]
+            catch e
+                isa(e, KeyError) || rethrow()
+            else
+                Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
+                Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
+            end
+        end
+
+        # dR/dX block
+        for iname in ikeys
+            istr = string(iname)
+            Jsub_in = @view(J_ca[rname, iname])
+            nrows = length(R_axis[rname])
+            ncols = length(YX_axis[iname])
+            Jsub_in_reshape = reshape(Jsub_in, nrows, ncols)
+            rows, cols = rcdict[rname, iname]
+            local Jsub_out
+            try
+                Jsub_out = partials[rstr, istr]
+            catch e
+                isa(e, KeyError) || rethrow()
+            else
+                Jsub_out_vec = OpenMDAOCore._maybe_nonzeros(Jsub_out)
                 Jsub_out_vec .= getindex.(Ref(Jsub_in_reshape), rows, cols)
             end
         end

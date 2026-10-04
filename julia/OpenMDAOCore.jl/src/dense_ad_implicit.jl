@@ -103,65 +103,9 @@ function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::C
     return ADImplicitComp{DenseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, Y_range, X_range, Y_axes, X_axes)
 end
 
-function apply_nonlinear!(comp::ADImplicitComp{DenseFlavor, true}, inputs, outputs, residuals)
-    TF = eltype(valtype(inputs))
-    YX_ca = get_combined_ca(TF, comp)
-    R_ca = get_residual_ca(TF, comp)
-    
-    # Copy outputs (states) and inputs into the combined YX vector
-    for uname in output_keys(comp)
-        @view(YX_ca[uname]) .= outputs[string(uname)]
-    end
-    for iname in input_keys(comp)
-        @view(YX_ca[iname]) .= inputs[string(iname)]
-    end
-
-    # Call the compute_adable closure directly.
-    f! = get_callback(comp)
-    f!(R_ca, YX_ca)
-
-    # Scatter R_ca back to the residuals dict.
-    for rname in keys(R_ca)
-        rstr = string(rname)
-        if typeof(residuals[rstr]) <: AbstractArray
-            residuals[rstr] .= @view(R_ca[rname])
-        else
-            residuals[rstr] = only(R_ca[rname])
-        end
-    end
-
-    return nothing
-end
-
-function apply_nonlinear!(comp::ADImplicitComp{DenseFlavor, false}, inputs, outputs, residuals)
-    TF = eltype(valtype(inputs))
-    YX_ca = get_combined_ca(TF, comp)
-    
-    # Copy outputs (states) and inputs into the combined YX vector
-    for uname in output_keys(comp)
-        @view(YX_ca[uname]) .= outputs[string(uname)]
-    end
-    for iname in input_keys(comp)
-        @view(YX_ca[iname]) .= inputs[string(iname)]
-    end
-
-    # Call the out-of-place closure and scatter the result.
-    f = get_callback(comp)
-    R_ca = f(YX_ca)
-
-    # Scatter R_ca back to the residuals dict.
-    for rname in keys(R_ca)
-        rstr = string(rname)
-        if typeof(residuals[rstr]) <: AbstractArray
-            residuals[rstr] .= @view(R_ca[rname])
-        else
-            residuals[rstr] = only(R_ca[rname])
-        end
-    end
-
-    return nothing
-end
-
+# Scatter the entries of the dense (R, YX) Jacobian `J_ca` into the `partials`
+# dict, reshaping each sub-Jacobian as needed. Sub-Jacobian keys that are not
+# present in `partials` (i.e., OpenMDAO didn't ask for them) are skipped.
 function _scatter_implicit_partials!(J_ca, okeys, ikeys, partials)
     R_axis, YX_axis = getaxes(J_ca)
     for rname in keys(R_axis)

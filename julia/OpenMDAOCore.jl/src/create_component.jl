@@ -102,7 +102,7 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * [`MatrixFreeReverseFlavor`](@ref) requires the backend to support VJPs (pullbacks).
 
 # Positional Arguments
-* `flavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref), or [`MatrixFreeReverseFlavor`](@ref)
+* `flavor`: [`DenseFlavor`](@ref), [`SparseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref), or [`MatrixFreeReverseFlavor`](@ref)
 * `ad_backend`: `<:ADTypes.AbstractADType` automatic differentiation "backend" library
 * `f!`: function of the form `f!(R_ca, Y_ca, X_ca, params)` which writes residuals to `R_ca` using states/outputs `Y_ca`, inputs `X_ca` and, optionally, parameters `params`.
 * `Y_ca`: `ComponentVector` of states/outputs
@@ -134,7 +134,7 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * [`MatrixFreeReverseFlavor`](@ref) requires the backend to support VJPs (pullbacks).
 
 # Positional Arguments
-* `flavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref), or [`MatrixFreeReverseFlavor`](@ref)
+* `flavor`: [`DenseFlavor`](@ref), [`SparseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref), or [`MatrixFreeReverseFlavor`](@ref)
 * `ad_backend`: `<:ADTypes.AbstractADType` automatic differentiation "backend" library
 * `f`: function of the form `R_ca = f(Y_ca, X_ca, params)` which returns residuals `R_ca` using states/outputs `Y_ca`, inputs `X_ca` and, optionally, parameters `params`.
 * `Y_ca`: `ComponentVector` of states/outputs

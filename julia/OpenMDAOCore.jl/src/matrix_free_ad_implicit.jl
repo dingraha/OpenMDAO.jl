@@ -308,68 +308,6 @@ function _compute_implicit_pullback!(comp::ADImplicitComp{MatrixFreeReverseFlavo
     return nothing
 end
 
-# Compute the residuals by calling the `compute_adable` closure directly.
-# These are the same as the `DenseFlavor` versions in `dense_ad_implicit.jl`,
-# just dispatched on the matrix-free flavors.
-function apply_nonlinear!(comp::ADImplicitComp{<:MatrixFreeFlavor, true}, inputs, outputs, residuals)
-    TF = eltype(valtype(inputs))
-    YX_ca = get_combined_ca(TF, comp)
-    R_ca = get_residual_ca(TF, comp)
-
-    # Copy outputs (states) and inputs into the combined YX vector
-    for uname in output_keys(comp)
-        @view(YX_ca[uname]) .= outputs[string(uname)]
-    end
-    for iname in input_keys(comp)
-        @view(YX_ca[iname]) .= inputs[string(iname)]
-    end
-
-    # Call the compute_adable closure directly.
-    f! = get_callback(comp)
-    f!(R_ca, YX_ca)
-
-    # Scatter R_ca back to the residuals dict.
-    for rname in keys(R_ca)
-        rstr = string(rname)
-        if typeof(residuals[rstr]) <: AbstractArray
-            residuals[rstr] .= @view(R_ca[rname])
-        else
-            residuals[rstr] = only(R_ca[rname])
-        end
-    end
-
-    return nothing
-end
-
-function apply_nonlinear!(comp::ADImplicitComp{<:MatrixFreeFlavor, false}, inputs, outputs, residuals)
-    TF = eltype(valtype(inputs))
-    YX_ca = get_combined_ca(TF, comp)
-
-    # Copy outputs (states) and inputs into the combined YX vector
-    for uname in output_keys(comp)
-        @view(YX_ca[uname]) .= outputs[string(uname)]
-    end
-    for iname in input_keys(comp)
-        @view(YX_ca[iname]) .= inputs[string(iname)]
-    end
-
-    # Call the out-of-place closure and scatter the result.
-    f = get_callback(comp)
-    R_ca = f(YX_ca)
-
-    # Scatter R_ca back to the residuals dict.
-    for rname in keys(R_ca)
-        rstr = string(rname)
-        if typeof(residuals[rstr]) <: AbstractArray
-            residuals[rstr] .= @view(R_ca[rname])
-        else
-            residuals[rstr] = only(R_ca[rname])
-        end
-    end
-
-    return nothing
-end
-
 function apply_linear!(comp::ADImplicitComp{MatrixFreeForwardFlavor}, inputs, outputs, d_inputs, d_outputs, d_residuals, mode)
     if mode == "fwd"
         _compute_implicit_pushforward!(comp, inputs, outputs, d_inputs, d_outputs, d_residuals)
