@@ -32,7 +32,7 @@ include("partials_data.jl")
 export PartialsData
 
 include("abstract_ad.jl")
-export get_callback, get_input_ca, get_output_ca, get_jacobian_ca, get_units, get_backend, get_prep
+export get_callback, get_func, get_params, get_input_ca, get_output_ca, get_jacobian_ca, get_units, get_backend, get_prep
 export ADExplicitComp, ADImplicitComp,
     DerivativeFlavor, AssembledFlavor, MatrixFreeFlavor,
     DenseFlavor, SparseFlavor,

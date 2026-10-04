@@ -326,12 +326,7 @@ function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TA
 
     # Create a new user-defined function that captures the `params` argument.
     # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
-    compute_adable = let params=params
-        (Y, X)->begin
-            f!(Y, X, params)
-            return nothing
-        end
-    end
+    compute_adable = OpenMDAOCore._make_compute_adable(Val(true), f!, params)
 
     # Get the prep-related stuff.
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
@@ -345,7 +340,7 @@ function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TA
         X_ca_cs = Y_ca_cs = nothing
     end
 
-    return OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+    return OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, f!, params, compute_adable, X_ca, Y_ca, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -369,13 +364,7 @@ Create an out-of-place [`SparseFlavor`](@ref) [`ADExplicitComp`](@ref).
 """
 function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
-    # Create a new user-defined function that captures the `params` argument.
-    # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
-    compute_adable = let params=params
-        (X,)->begin
-            return f(X, params)
-        end
-    end
+    compute_adable = OpenMDAOCore._make_compute_adable(Val(false), f, params)
 
     Y_ca = compute_adable(X_ca)
 
@@ -391,7 +380,7 @@ function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TA
     end
 
     Y_ca_cs = nothing
-    return OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+    return OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, f, params, compute_adable, X_ca, Y_ca, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -449,10 +438,10 @@ function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore
 
         # Get the new sparsity stuff.
         ad_backend = OpenMDAOCore.get_backend(self)
-        f! = OpenMDAOCore.get_callback(self)
-        deriv_prep, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, f!, Y_ca, X_ca)
+        compute_adable = OpenMDAOCore._make_compute_adable(Val(true), self.func, self.params)
+        deriv_prep, X_ca_cs, Y_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, Y_ca, X_ca)
 
-        self = OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, f!, X_ca, Y_ca, deriv_prep,
+        self = OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, self.func, self.params, compute_adable, X_ca, Y_ca, deriv_prep,
             self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, Y_ca_cs)
     end
 
@@ -468,10 +457,10 @@ function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore
 
         # Get the new sparsity stuff.
         ad_backend = OpenMDAOCore.get_backend(self)
-        f = OpenMDAOCore.get_callback(self)
-        deriv_prep, X_ca_cs = _get_sparse_prep_stuff(ad_backend, f, X_ca)
+        compute_adable = OpenMDAOCore._make_compute_adable(Val(false), self.func, self.params)
+        deriv_prep, X_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, X_ca)
 
-        self = OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, f, X_ca, nothing, deriv_prep,
+        self = OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, self.func, self.params, compute_adable, X_ca, nothing, deriv_prep,
             self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, nothing)
     end
 
@@ -540,6 +529,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
     prep = OpenMDAOCore.get_prep(self)
     ad_backend = OpenMDAOCore.get_backend(self)
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
@@ -593,6 +583,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
     prep = OpenMDAOCore.get_prep(self)
     ad_backend = OpenMDAOCore.get_backend(self)
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
     DifferentiationInterface.jacobian!(f, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
@@ -644,18 +635,13 @@ OpenMDAOCore.get_jacobian_ca(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.Spar
 OpenMDAOCore.get_rows_cols_dict(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor}) = comp.deriv_prep.rcdict
 
 """
-    ADImplicitComp(::SparseFlavor, ::Val{true}, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+    ADImplicitComp(::SparseFlavor, ::Val{true}, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=..., tags_dict=..., shape_by_conn_dict=..., copy_shape_dict=..., force_skip_prep=false)
 
 Create an in-place [`SparseFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse Jacobian.
-
-Note: `force_skip_prep=true` is not supported for `SparseFlavor`, since the sparsity pattern is extracted from the prep object.
 """
 function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
-    if force_skip_prep
-        throw(ArgumentError("force_skip_prep=true is not supported for the SparseFlavor ADImplicitComp, since the sparsity pattern of the Jacobian is extracted from the DifferentiationInterface prep object."))
-    end
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -668,15 +654,7 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, a
     Y_axes = getaxes(Y_ca)
     X_axes = getaxes(X_ca)
 
-    compute_adable = let params=params, Y_range=Y_range, X_range=X_range, Y_axes=Y_axes, X_axes=X_axes
-        (R, YX) -> begin
-            Y = ComponentArray(@view(YX[Y_range]), Y_axes)
-            X = ComponentArray(@view(YX[X_range]), X_axes)
-            f!(R, Y, X, params)
-            return nothing
-        end
-    end
-
+    compute_adable = OpenMDAOCore._make_implicit_compute_adable(true, f!, params, Y_range, X_range, Y_axes, X_axes)
     R_ca = similar(Y_ca)
 
     # The explicit sparse prep builder works for implicit components, too:
@@ -684,24 +662,26 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, a
     # DifferentiationInterface's in-place (`f!(y, x)`) form, so we pass `R_ca`
     # as the "output" argument (`Y_ca`) and the combined `YX_ca` as the
     # "input" argument (`X_ca`).
-    deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca)
+    if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
+        deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca)
+    else
+        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
+        # `setup_partials`).
+        deriv_prep = OpenMDAOCore.SparseDerivPrep(nothing, nothing, Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}())
+        YX_ca_cs = R_ca_cs = nothing
+    end
 
-    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 """
-    ADImplicitComp(::SparseFlavor, ::Val{false}, ad_backend, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+    ADImplicitComp(::SparseFlavor, ::Val{false}, ad_backend, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=..., tags_dict=..., shape_by_conn_dict=..., copy_shape_dict=..., force_skip_prep=false)
 
 Create an out-of-place [`SparseFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse Jacobian.
-
-Note: `force_skip_prep=true` is not supported for `SparseFlavor`, since the sparsity pattern is extracted from the prep object.
 """
 function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
-    if force_skip_prep
-        throw(ArgumentError("force_skip_prep=true is not supported for the SparseFlavor ADImplicitComp, since the sparsity pattern of the Jacobian is extracted from the DifferentiationInterface prep object."))
-    end
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -714,20 +694,49 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, 
     Y_axes = getaxes(Y_ca)
     X_axes = getaxes(X_ca)
 
-    compute_adable = let params=params, Y_range=Y_range, X_range=X_range, Y_axes=Y_axes, X_axes=X_axes
-        YX -> f(ComponentArray(@view(YX[Y_range]), Y_axes), ComponentArray(@view(YX[X_range]), X_axes), params)
+    compute_adable = OpenMDAOCore._make_implicit_compute_adable(false, f, params, Y_range, X_range, Y_axes, X_axes)
+    if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
+        deriv_prep, YX_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, YX_ca)
+    else
+        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
+        # `setup_partials`).
+        deriv_prep = OpenMDAOCore.SparseDerivPrep(nothing, nothing, Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}())
+        YX_ca_cs = nothing
     end
-
-    deriv_prep, YX_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, YX_ca)
 
     R_ca = nothing
     R_ca_cs = nothing
 
-    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
 # Compute dR/d(Y, X) with a single sparse `jacobian!` call, then scatter the
 # sub-Jacobians to the `partials` dict using the sparsity pattern.
+function OpenMDAOCore.update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+    if (length(input_sizes) > 0) || (length(output_sizes) > 0)
+        Y_ca_old = OpenMDAOCore.get_output_ca(comp)
+        X_ca_old = OpenMDAOCore.get_input_ca(comp)
+
+        Y_ca = OpenMDAOCore._resize_component_vector(Y_ca_old, output_sizes)
+        X_ca = OpenMDAOCore._resize_component_vector(X_ca_old, input_sizes)
+
+        YX_ca = ComponentVector(; (k => Y_ca[k] for k in keys(Y_ca))..., (k => X_ca[k] for k in keys(X_ca))...)
+        R_ca = similar(Y_ca)
+        Y_range = 1:length(Y_ca)
+        X_range = length(Y_ca)+1:length(YX_ca)
+        Y_axes = getaxes(Y_ca)
+        X_axes = getaxes(X_ca)
+
+        compute_adable = OpenMDAOCore._make_implicit_compute_adable(true, comp.func, comp.params, Y_range, X_range, Y_axes, X_axes)
+        deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(OpenMDAOCore.get_backend(comp), compute_adable, R_ca, YX_ca)
+
+        comp = OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(OpenMDAOCore.get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    end
+
+    return comp
+end
+
 function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}, inputs, outputs, partials)
     YX_ca = OpenMDAOCore.get_combined_ca(comp)
     okeys = OpenMDAOCore.output_keys(comp)
@@ -744,6 +753,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     J_ca = OpenMDAOCore.get_jacobian_ca(comp)
     prep = OpenMDAOCore.get_prep(comp)
     ad_backend = OpenMDAOCore.get_backend(comp)
+    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
     DifferentiationInterface.jacobian!(f!, R_ca, J_ca, prep, ad_backend, YX_ca)
 
     rcdict = OpenMDAOCore.get_rows_cols_dict(comp)
@@ -793,6 +803,33 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     return nothing
 end
 
+function OpenMDAOCore.update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+    if (length(input_sizes) > 0) || (length(output_sizes) > 0)
+        Y_ca_old = OpenMDAOCore.get_output_ca(comp)
+        X_ca_old = OpenMDAOCore.get_input_ca(comp)
+
+        Y_ca = OpenMDAOCore._resize_component_vector(Y_ca_old, output_sizes)
+        X_ca = OpenMDAOCore._resize_component_vector(X_ca_old, input_sizes)
+
+        YX_ca = ComponentVector(; (k => Y_ca[k] for k in keys(Y_ca))..., (k => X_ca[k] for k in keys(X_ca))...)
+        Y_range = 1:length(Y_ca)
+        X_range = length(Y_ca)+1:length(YX_ca)
+        Y_axes = getaxes(Y_ca)
+        X_axes = getaxes(X_ca)
+
+        compute_adable = OpenMDAOCore._make_implicit_compute_adable(false, comp.func, comp.params, Y_range, X_range, Y_axes, X_axes)
+        deriv_prep, YX_ca_cs = _get_sparse_prep_stuff(OpenMDAOCore.get_backend(comp), compute_adable, YX_ca)
+
+        R_ca = nothing
+        R_ca_cs = nothing
+
+        comp = OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(OpenMDAOCore.get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    end
+
+    return comp
+end
+
 function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}, inputs, outputs, partials)
     YX_ca = OpenMDAOCore.get_combined_ca(comp)
     okeys = OpenMDAOCore.output_keys(comp)
@@ -808,6 +845,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     J_ca = OpenMDAOCore.get_jacobian_ca(comp)
     prep = OpenMDAOCore.get_prep(comp)
     ad_backend = OpenMDAOCore.get_backend(comp)
+    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
     DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, YX_ca)
 
     rcdict = OpenMDAOCore.get_rows_cols_dict(comp)

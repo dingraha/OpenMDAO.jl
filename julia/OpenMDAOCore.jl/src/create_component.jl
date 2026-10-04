@@ -112,18 +112,20 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `params`: parameters passed to the fourth argument to `f!`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated.
 * `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s).
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
 """
 function create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend::TAD,
         f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     if flavor isa MatrixFreeForwardFlavor
         can_jvp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support JVPs (pushforwards), which are required for MatrixFreeForwardFlavor"))
     elseif flavor isa MatrixFreeReverseFlavor
         can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
     end
     return ADImplicitComp(flavor, Val(true), ad_backend, f!, Y_ca, X_ca;
-        params=params, units_dict=units_dict, tags_dict=tags_dict, force_skip_prep=force_skip_prep)
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
 end
 
 """
@@ -146,16 +148,18 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `params`: parameters passed to the third argument to `f`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated.
 * `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s).
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
 """
 function create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend::TAD,
         f::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     if flavor isa MatrixFreeForwardFlavor
         can_jvp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support JVPs (pushforwards), which are required for MatrixFreeForwardFlavor"))
     elseif flavor isa MatrixFreeReverseFlavor
         can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
     end
     return ADImplicitComp(flavor, Val(false), ad_backend, f, Y_ca, X_ca;
-        params=params, units_dict=units_dict, tags_dict=tags_dict, force_skip_prep=force_skip_prep)
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
 end

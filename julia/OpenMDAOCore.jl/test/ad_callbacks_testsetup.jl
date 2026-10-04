@@ -25,6 +25,7 @@ using OpenMDAOCore: VarData, PartialsData,
 
 export f_simple!, f_simple, f_simple_no_params!,
     f_implicit!, f_implicit, f_implicit_statics!, f_implicit_statics,
+    f_implicit_no_params!, f_implicit_no_params,
     do_compute_check, do_compute_partials_check,
     do_compute_jacvec_product_check_forward, do_compute_jacvec_product_check_reverse,
     do_compute_residuals_check, do_jvp_check, do_vjp_check,
@@ -34,6 +35,7 @@ export f_simple!, f_simple, f_simple_no_params!,
     AutosparseAutomaticTestPrep, AutosparseAutomaticShapeByConnTestPrep,
     AutoDenseImplicitTestPrep, AutoMatrixFreeImplicitTestPrep,
     AutosparseImplicitManualTestPrep, AutosparseImplicitAutomaticTestPrep,
+    AutoDenseImplicitShapeByConnTestPrep, AutoMatrixFreeImplicitShapeByConnTestPrep, AutosparseImplicitAutomaticShapeByConnTestPrep,
     doit_in_place, doit_out_of_place,
     doit_in_place_forward, doit_in_place_reverse,
     doit_out_of_place_forward, doit_out_of_place_reverse,
@@ -178,6 +180,46 @@ function f_implicit_statics(Y, X, statics)
     r_e = ((2*a^2) .+ 3.0.*b.^2.1 .+ 4.0.*sum(c.^2.2) .+ 5.0.*vec(sum(d.^2.3; dims=1))) .* statics[1] .- e
     r_f = ((6*a^2.4) .+ 7.0.*reshape(b, 1, :).^2.5 .+ 8.0.*c.^2.6 .+ 9.0.*d.^2.7) .* statics[2] .- f
     r_g = (10.0.*sin.(b).*cos.(PermutedDimsArray(d, (2, 1)))) .* statics[3] .- g
+
+    return ComponentVector(e=r_e, f=r_f, g=r_g)
+end
+
+function f_implicit_no_params!(R, Y, X, params)
+    a = only(X[:a])
+    b = @view X[:b]
+    c = @view X[:c]
+    d = @view X[:d]
+    e = @view Y[:e]
+    f = @view Y[:f]
+    g = @view Y[:g]
+    r_e = @view R[:e]
+    r_f = @view R[:f]
+    r_g = @view R[:g]
+
+    M, N = size(f)
+    for n in 1:N
+        r_e[n] = (2*a^2 + 3*b[n]^2.1 + 4*sum(c.^2.2) + 5*sum((@view d[:, n]).^2.3)) - e[n]
+        for m in 1:M
+            r_f[m, n] = (6*a^2.4 + 7*b[n]^2.5 + 8*c[m]^2.6 + 9*d[m, n]^2.7) - f[m, n]
+            r_g[n, m] = 10*sin(b[n])*cos(d[m, n]) - g[n, m]
+        end
+    end
+
+    return nothing
+end
+
+function f_implicit_no_params(Y, X, params)
+    a = only(X[:a])
+    b = @view X[:b]
+    c = @view X[:c]
+    d = @view X[:d]
+    e = @view Y[:e]
+    f = @view Y[:f]
+    g = @view Y[:g]
+
+    r_e = ((2*a^2) .+ 3.0.*b.^2.1 .+ 4.0.*sum(c.^2.2) .+ 5.0.*vec(sum(d.^2.3; dims=1))) .- e
+    r_f = ((6*a^2.4) .+ 7.0.*reshape(b, 1, :).^2.5 .+ 8.0.*c.^2.6 .+ 9.0.*d.^2.7) .- f
+    r_g = (10.0.*sin.(b).*cos.(PermutedDimsArray(d, (2, 1)))) .- g
 
     return ComponentVector(e=r_e, f=r_f, g=r_g)
 end
@@ -2684,5 +2726,174 @@ function doit_out_of_place(prep::AutosparseImplicitAutomaticTestPrep)
     do_compute_partials_check(comp, statics)
 end
 
+
+# ── Implicit shape_by_conn prep structs (mirroring the explicit ones) ─────────
+
+struct AutoDenseImplicitShapeByConnTestPrep{TXCA,TYCA,TAD}
+    M::Int
+    N::Int
+    X_ca::TXCA
+    Y_ca::TYCA
+    ad_backend::TAD
+    shape_by_conn_dict::Dict{Symbol,Bool}
+    copy_shape_dict::Dict{Symbol,Symbol}
+end
+
+function AutoDenseImplicitShapeByConnTestPrep(M, N, ad_type)
+    N_wrong = 1
+    X_ca = ComponentVector(a=zero(Float64), b=zeros(Float64, N_wrong), c=zeros(Float64, M), d=zeros(Float64, M, N_wrong))
+    Y_ca = ComponentVector(e=zeros(Float64, N_wrong), f=zeros(Float64, M, N_wrong), g=zeros(Float64, N_wrong, M))
+    X_ca[:a] = 2.0
+    X_ca[:b] .= 3.0
+    X_ca[:c] .= range(5.0, 6.0; length=M)
+    X_ca[:d] .= reshape(range(7.0, 8.0; length=M*N_wrong), M, N_wrong)
+    if ad_type == "forwarddiff"
+        ad_backend = ADTypes.AutoForwardDiff()
+    elseif ad_type == "reversediff"
+        ad_backend = ADTypes.AutoReverseDiff()
+    else
+        error("unexpected ad_type = $(ad_type)")
+    end
+    shape_by_conn_dict = Dict(:b=>true, :d=>true, :g=>true)
+    copy_shape_dict = Dict(:e=>:b, :f=>:d)
+    return AutoDenseImplicitShapeByConnTestPrep(M, N, X_ca, Y_ca, ad_backend, shape_by_conn_dict, copy_shape_dict)
+end
+
+function doit_in_place(prep::AutoDenseImplicitShapeByConnTestPrep)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend = prep.ad_backend
+    shape_by_conn_dict = prep.shape_by_conn_dict
+    copy_shape_dict = prep.copy_shape_dict
+
+    comp = create_implicit_component(DenseFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+
+    N = prep.N
+    M = prep.M
+    input_sizes = Dict(:b=>N, :d=>(M, N))
+    output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
+    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+
+    do_compute_residuals_check(comp)
+    do_compute_partials_check(comp)
+end
+
+struct AutoMatrixFreeImplicitShapeByConnTestPrep{TXCA,TYCA,TAD}
+    M::Int
+    N::Int
+    X_ca::TXCA
+    Y_ca::TYCA
+    ad_backend::TAD
+    shape_by_conn_dict::Dict{Symbol,Bool}
+    copy_shape_dict::Dict{Symbol,Symbol}
+end
+
+function AutoMatrixFreeImplicitShapeByConnTestPrep(M, N, ad_type)
+    N_wrong = 1
+    X_ca = ComponentVector(a=zero(Float64), b=zeros(Float64, N_wrong), c=zeros(Float64, M), d=zeros(Float64, M, N_wrong))
+    Y_ca = ComponentVector(e=zeros(Float64, N_wrong), f=zeros(Float64, M, N_wrong), g=zeros(Float64, N_wrong, M))
+    X_ca[:a] = 2.0
+    X_ca[:b] .= 3.0
+    X_ca[:c] .= range(5.0, 6.0; length=M)
+    X_ca[:d] .= reshape(range(7.0, 8.0; length=M*N_wrong), M, N_wrong)
+    if ad_type == "forwarddiff"
+        ad_backend = ADTypes.AutoForwardDiff()
+    elseif ad_type == "reversediff"
+        ad_backend = ADTypes.AutoReverseDiff()
+    else
+        error("unexpected ad_type = $(ad_type)")
+    end
+    shape_by_conn_dict = Dict(:b=>true, :d=>true, :g=>true)
+    copy_shape_dict = Dict(:e=>:b, :f=>:d)
+    return AutoMatrixFreeImplicitShapeByConnTestPrep(M, N, X_ca, Y_ca, ad_backend, shape_by_conn_dict, copy_shape_dict)
+end
+
+function doit_in_place_forward(prep::AutoMatrixFreeImplicitShapeByConnTestPrep)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend = prep.ad_backend
+    shape_by_conn_dict = prep.shape_by_conn_dict
+    copy_shape_dict = prep.copy_shape_dict
+
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+
+    N = prep.N
+    M = prep.M
+    input_sizes = Dict(:b=>N, :d=>(M, N))
+    output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
+    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+
+    do_compute_residuals_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+end
+
+function doit_in_place_reverse(prep::AutoMatrixFreeImplicitShapeByConnTestPrep)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend = prep.ad_backend
+    shape_by_conn_dict = prep.shape_by_conn_dict
+    copy_shape_dict = prep.copy_shape_dict
+
+    comp = create_implicit_component(MatrixFreeReverseFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+
+    N = prep.N
+    M = prep.M
+    input_sizes = Dict(:b=>N, :d=>(M, N))
+    output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
+    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+
+    do_compute_residuals_check(comp)
+    do_compute_jacvec_product_check_reverse(comp)
+end
+
+struct AutosparseImplicitAutomaticShapeByConnTestPrep{TXCA,TYCA,TAD}
+    M::Int
+    N::Int
+    X_ca::TXCA
+    Y_ca::TYCA
+    ad_backend::TAD
+    shape_by_conn_dict::Dict{Symbol,Bool}
+    copy_shape_dict::Dict{Symbol,Symbol}
+end
+
+function AutosparseImplicitAutomaticShapeByConnTestPrep(M, N, ad_type)
+    N_wrong = 1
+    X_ca = ComponentVector(a=zero(Float64), b=zeros(Float64, N_wrong), c=zeros(Float64, M), d=zeros(Float64, M, N_wrong))
+    Y_ca = ComponentVector(e=zeros(Float64, N_wrong), f=zeros(Float64, M, N_wrong), g=zeros(Float64, N_wrong, M))
+    X_ca[:a] = 2.0
+    X_ca[:b] .= 3.0
+    X_ca[:c] .= range(5.0, 6.0; length=M)
+    X_ca[:d] .= reshape(range(7.0, 8.0; length=M*N_wrong), M, N_wrong)
+    sparse_atol = 1e-10
+    sparsity_detector = PerturbedDenseSparsityDetector(ADTypes.AutoForwardDiff(); atol=sparse_atol, method=:direct)
+    coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
+    if ad_type == "forwarddiff"
+        ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
+    else
+        error("unexpected ad_type = $(ad_type)")
+    end
+    shape_by_conn_dict = Dict(:b=>true, :d=>true, :g=>true)
+    copy_shape_dict = Dict(:e=>:b, :f=>:d)
+    return AutosparseImplicitAutomaticShapeByConnTestPrep(M, N, X_ca, Y_ca, ad_backend, shape_by_conn_dict, copy_shape_dict)
+end
+
+function doit_in_place(prep::AutosparseImplicitAutomaticShapeByConnTestPrep)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend = prep.ad_backend
+    shape_by_conn_dict = prep.shape_by_conn_dict
+    copy_shape_dict = prep.copy_shape_dict
+
+    comp = create_implicit_component(SparseFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+
+    N = prep.N
+    M = prep.M
+    input_sizes = Dict(:b=>N, :d=>(M, N))
+    output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
+    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+
+    do_compute_residuals_check(comp)
+    do_compute_partials_check(comp)
+end
 
 end # module

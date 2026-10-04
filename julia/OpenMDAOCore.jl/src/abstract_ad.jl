@@ -143,7 +143,7 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TCompute, TX, TY, TDP, TXCS, TYCS}
+    ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TFunc, TParams, TCompute, TX, TY, TDP, TXCS, TYCS}
         <: AbstractExplicitComp
 
 An explicit AD component parameterized by derivative flavor `F`.
@@ -157,7 +157,9 @@ An explicit AD component parameterized by derivative flavor `F`.
 
 # Fields
 * `ad_backend`: `<:ADTypes.AbstractADType` automatic differentiation backend
-* `compute_adable`: closure compatible with DifferentiationInterface.jl
+* `func`: the user-defined function (`f!` for in-place, `f` for out-of-place)
+* `params`: the parameters passed to `func` (captured by `compute_adable`)
+* `compute_adable`: closure compatible with DifferentiationInterface.jl, built from `func` and `params`
 * `X_ca`: `ComponentVector` of inputs (`Float64`)
 * `Y_ca`: `ComponentVector` of outputs (`Float64`); `nothing` for out-of-place
 * `deriv_prep`: flavor-specific prep data ([`DenseDerivPrep`](@ref),
@@ -169,8 +171,10 @@ An explicit AD component parameterized by derivative flavor `F`.
 * `X_ca_cs`: `ComplexF64` copy of `X_ca` (for Python-side complex-step)
 * `Y_ca_cs`: `ComplexF64` copy of `Y_ca` (for Python-side complex-step); `nothing` for out-of-place
 """
-struct ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TCompute, TX, TY, TDP, TXCS, TYCS} <: AbstractExplicitComp
+struct ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TFunc, TParams, TCompute, TX, TY, TDP, TXCS, TYCS} <: AbstractExplicitComp
     ad_backend::TAD
+    func::TFunc
+    params::TParams
     compute_adable::TCompute
     X_ca::TX
     Y_ca::TY            # nothing for out-of-place
@@ -183,18 +187,37 @@ struct ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TCompute, TX, TY, TDP, 
     Y_ca_cs::TYCS       # nothing for out-of-place
 
     function ADExplicitComp{F, InPlace}(
-            ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+            ad_backend, func, params, compute_adable, X_ca, Y_ca, deriv_prep,
             units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict,
             X_ca_cs, Y_ca_cs
         ) where {F<:DerivativeFlavor, InPlace}
         return new{F, InPlace,
-                   typeof(ad_backend), typeof(compute_adable),
+                   typeof(ad_backend), typeof(func), typeof(params), typeof(compute_adable),
                    typeof(X_ca), typeof(Y_ca),
                    typeof(deriv_prep),
                    typeof(X_ca_cs), typeof(Y_ca_cs)}(
-            ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+            ad_backend, func, params, compute_adable, X_ca, Y_ca, deriv_prep,
             units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict,
             X_ca_cs, Y_ca_cs)
+    end
+end
+
+# Build the DifferentiationInterface-compatible closure for an explicit AD
+# component from the user-defined function and parameters.
+function _make_compute_adable(::Val{true}, func, params)
+    return let func=func, params=params
+        (Y, X) -> begin
+            func(Y, X, params)
+            return nothing
+        end
+    end
+end
+
+function _make_compute_adable(::Val{false}, func, params)
+    return let func=func, params=params
+        (X,) -> begin
+            return func(X, params)
+        end
     end
 end
 
@@ -203,6 +226,8 @@ end
 # ---------------------------------------------------------------------------
 
 get_callback(comp::ADExplicitComp) = comp.compute_adable
+get_func(comp::ADExplicitComp) = comp.func
+get_params(comp::ADExplicitComp) = comp.params
 get_backend(comp::ADExplicitComp) = comp.ad_backend
 get_prep(comp::ADExplicitComp) = comp.deriv_prep.prep
 
@@ -378,7 +403,9 @@ differentiating with respect to `YX`.
 * `compute_adable::TCompute`: closure of the form `compute_adable(R, YX)` (in-place) or
   `R = compute_adable(YX)` (out-of-place) compatible with DifferentiationInterface.jl,
 where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is the residuals
-  `ComponentVector`.  Parameters are captured by the closure.
+  `ComponentVector`. Built from `func` and `params`.
+* `func::TFunc`: the user-defined function (`f!` for in-place, `f` for out-of-place)
+* `params::TParams`: the parameters passed to `func`
 * `YX_ca::TYX`: concatenated `ComponentVector` of outputs (state) followed by inputs (the differentiation variable)
 * `R_ca::TR`: `ComponentVector` of residuals
 * `YX_ca_cs::TYXCS`: `ComplexF64` version of `YX_ca` (for the complex-step method)
@@ -386,14 +413,18 @@ where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is
 * `deriv_prep::TDP`: flavor-specific derivative preparation data
 * `units_dict::Dict{Symbol,String}`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s)
 * `tags_dict::Dict{Symbol,Vector{String}}`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
+* `shape_by_conn_dict::Dict{Symbol,Bool}`: `Dict` indicating if a variable's shape is determined by a connection
+* `copy_shape_dict::Dict{Symbol,Symbol}`: `Dict` mapping variable names to the names of variables whose shapes they copy
 * `Y_range::TYR`: range of indices for outputs (states) within `YX_ca`
 * `X_range::TXR`: range of indices for inputs within `YX_ca`
 * `Y_axes::TYAx`: axes information for outputs (states)
 * `X_axes::TXAx`: axes information for inputs
 """
-struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TFunc,TParams,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TSBC,TCS,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
     ad_backend::TAD
     compute_adable::TCompute
+    func::TFunc
+    params::TParams
     YX_ca::TYX
     R_ca::TR
     YX_ca_cs::TYXCS
@@ -401,20 +432,42 @@ struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS
     deriv_prep::TDP
     units_dict::Dict{Symbol,String}
     tags_dict::Dict{Symbol,Vector{String}}
+    shape_by_conn_dict::Dict{Symbol,Bool}
+    copy_shape_dict::Dict{Symbol,Symbol}
     Y_range::TYR
     X_range::TXR
     Y_axes::TYAx
     X_axes::TXAx
 
-    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes) where {F<:DerivativeFlavor, InPlace}
+    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes) where {F<:DerivativeFlavor, InPlace}
         return new{F, InPlace,
-                   typeof(ad_backend), typeof(compute_adable),
+                   typeof(ad_backend), typeof(func), typeof(params), typeof(compute_adable),
                    typeof(YX_ca), typeof(R_ca),
                    typeof(YX_ca_cs), typeof(R_ca_cs),
                    typeof(deriv_prep),
                    typeof(units_dict), typeof(tags_dict),
+                   typeof(shape_by_conn_dict), typeof(copy_shape_dict),
                    typeof(Y_range), typeof(X_range), typeof(Y_axes), typeof(X_axes)}(
-            ad_backend, compute_adable, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, Y_range, X_range, Y_axes, X_axes)
+            ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    end
+end
+
+# Build the DifferentiationInterface-compatible closure for an implicit AD
+# component from the user-defined function, parameters, and the YX geometry.
+function _make_implicit_compute_adable(inplace::Bool, func, params, Y_range, X_range, Y_axes, X_axes)
+    if inplace
+        return let func=func, params=params, Y_range=Y_range, X_range=X_range, Y_axes=Y_axes, X_axes=X_axes
+            (R, YX) -> begin
+                Y = ComponentArray(@view(YX[Y_range]), Y_axes)
+                X = ComponentArray(@view(YX[X_range]), X_axes)
+                func(R, Y, X, params)
+                return nothing
+            end
+        end
+    else
+        return let func=func, params=params, Y_range=Y_range, X_range=X_range, Y_axes=Y_axes, X_axes=X_axes
+            YX -> func(ComponentArray(@view(YX[Y_range]), Y_axes), ComponentArray(@view(YX[X_range]), X_axes), params)
+        end
     end
 end
 
@@ -423,6 +476,8 @@ end
 # ---------------------------------------------------------------------------
 
 get_callback(comp::ADImplicitComp) = comp.compute_adable
+get_func(comp::ADImplicitComp) = comp.func
+get_params(comp::ADImplicitComp) = comp.params
 get_backend(comp::ADImplicitComp) = comp.ad_backend
 get_prep(comp::ADImplicitComp) = comp.deriv_prep.prep
 
@@ -480,13 +535,20 @@ function get_tags(comp::ADImplicitComp, varname)
     return get(comp.tags_dict, varname, Vector{String}())
 end
 
+function get_copy_shape(comp::ADImplicitComp, varname)
+    cs = get(comp.copy_shape_dict, varname, nothing)
+    return cs === nothing ? nothing : string(cs)
+end
+
 function get_input_var_data(self::ADImplicitComp)
     ca = get_input_ca(self)
     return [VarData(string(k);
                     shape=size(ca[k]),
                     val=ca[k],
                     units=get_units(self, k),
-                    tags=get_tags(self, k)) for k in keys(ca)]
+                    tags=get_tags(self, k),
+                    shape_by_conn=get(self.shape_by_conn_dict, k, false),
+                    copy_shape=get_copy_shape(self, k)) for k in keys(ca)]
 end
 
 function get_output_var_data(self::ADImplicitComp)
@@ -495,7 +557,9 @@ function get_output_var_data(self::ADImplicitComp)
                     shape=size(ca[k]),
                     val=ca[k],
                     units=get_units(self, k),
-                    tags=get_tags(self, k)) for k in keys(ca)]
+                    tags=get_tags(self, k),
+                    shape_by_conn=get(self.shape_by_conn_dict, k, false),
+                    copy_shape=get_copy_shape(self, k)) for k in keys(ca)]
 end
 
 # Dense implicit components declare a single dense ("*", "*") partial.
@@ -514,16 +578,25 @@ end
 
 Return `input_data`, `output_data`, and `partials_data` describing the implicit AD component to OpenMDAO.
 `input_data` and `output_data` are `Vector`s of [`VarData`](@ref) describing the inputs and state/output variables, respectively.
-`partials_data` describes the sub-Jacobians: a single dense (`"*", "*"`) entry for [`DenseFlavor`](@ref),
-per-entry `rows`/`cols` data for [`SparseFlavor`](@ref), and an empty `Vector` for the matrix-free flavors
-(which use the OpenMDAO matrix-free API via `apply_linear!` instead).
+`partials_data` is empty: the sub-Jacobians are declared by [`setup_partials`](@ref), which OpenMDAO calls after the
+variable shapes are known (this also supports `shape_by_conn`/`copy_shape` variables). The sub-Jacobians are:
+a single dense (`"*", "*"`) entry for [`DenseFlavor`](@ref), per-entry `rows`/`cols` data for [`SparseFlavor`](@ref),
+and an empty `Vector` for the matrix-free flavors (which use the OpenMDAO matrix-free API via `apply_linear!` instead).
 """
 function OpenMDAOCore.setup(self::ADImplicitComp)
     input_data = get_input_var_data(self)
     output_data = get_output_var_data(self)
-    partials_data = get_partials_data(self)
 
-    return input_data, output_data, partials_data
+    return input_data, output_data, Vector{PartialsData}()
+end
+
+function OpenMDAOCore.setup_partials(self::ADImplicitComp, input_sizes, output_sizes)
+    input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
+    output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
+
+    self_new = update_prep(self, input_sizes_ca, output_sizes_ca)
+
+    return self_new, get_partials_data(self_new)
 end
 
 # ---------------------------------------------------------------------------
@@ -541,6 +614,11 @@ has_apply_linear(self::ADImplicitComp{DenseFlavor}) = false
 has_apply_nonlinear(self::ADImplicitComp{SparseFlavor}) = true
 has_linearize(self::ADImplicitComp{SparseFlavor}) = true
 has_apply_linear(self::ADImplicitComp{SparseFlavor}) = false
+
+# All implicit AD flavors support `setup_partials` (used to rebuild the
+# component when `shape_by_conn`/`copy_shape` variables are resized, and to
+# declare partials after the shapes are known).
+has_setup_partials(self::ADImplicitComp{<:DerivativeFlavor}) = true
 
 # Matrix-free: support apply_nonlinear + apply_linear, not linearize (assembled).
 has_apply_nonlinear(self::ADImplicitComp{<:MatrixFreeFlavor}) = true

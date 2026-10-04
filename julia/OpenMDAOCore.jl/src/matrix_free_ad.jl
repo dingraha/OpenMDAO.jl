@@ -43,7 +43,7 @@ function _get_matrix_free_forward_prep_in_place(ad_backend, compute_adable, Y_ca
     dX_ca = similar(X_ca)
     dY_ca = similar(Y_ca)
     if force_skip_prep
-        prep = DifferentiationInterface.NoPushforwardPrep(DifferentiationInterface.signature(compute_adable, Y_ca, ad_backend, X_ca, (dX_ca,); strict=Val{true}()))
+        prep = nothing
     else
         prep = DifferentiationInterface.prepare_pushforward(compute_adable, Y_ca, ad_backend, X_ca, (dX_ca,))
     end
@@ -56,7 +56,7 @@ function _get_matrix_free_reverse_prep_in_place(ad_backend, compute_adable, Y_ca
     dX_ca = similar(X_ca)
     dY_ca = similar(Y_ca)
     if force_skip_prep
-        prep = DifferentiationInterface.NoPullbackPrep(DifferentiationInterface.signature(compute_adable, Y_ca, ad_backend, X_ca, (dY_ca,); strict=Val{true}()))
+        prep = nothing
     else
         prep = DifferentiationInterface.prepare_pullback(compute_adable, Y_ca, ad_backend, X_ca, (dY_ca,))
     end
@@ -69,7 +69,7 @@ function _get_matrix_free_forward_prep_out_of_place(ad_backend, compute_adable, 
     dX_ca = similar(X_ca)
     dY_ca = similar(Y_ca)
     if force_skip_prep
-        prep = DifferentiationInterface.NoPushforwardPrep(DifferentiationInterface.signature(compute_adable, ad_backend, X_ca, (dX_ca,); strict=Val{true}()))
+        prep = nothing
     else
         prep = DifferentiationInterface.prepare_pushforward(compute_adable, ad_backend, X_ca, (dX_ca,))
     end
@@ -81,7 +81,7 @@ function _get_matrix_free_reverse_prep_out_of_place(ad_backend, compute_adable, 
     dX_ca = similar(X_ca)
     dY_ca = similar(Y_ca)
     if force_skip_prep
-        prep = DifferentiationInterface.NoPullbackPrep(DifferentiationInterface.signature(compute_adable, ad_backend, X_ca, (dY_ca,); strict=Val{true}()))
+        prep = nothing
     else
         prep = DifferentiationInterface.prepare_pullback(compute_adable, ad_backend, X_ca, (dY_ca,))
     end
@@ -103,26 +103,22 @@ function ADExplicitComp(::MatrixFreeForwardFlavor, ad_backend, f!, Y_ca::Compone
         params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(),
         shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
 
-    compute_adable = let params=params
-        (Y, X)->begin
-            f!(Y, X, params)
-            return nothing
-        end
-    end
+    compute_adable = _make_compute_adable(Val(true), f!, params)
 
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0)
         deriv_prep, X_ca_cs, Y_ca_cs = _get_matrix_free_forward_prep_in_place(ad_backend, compute_adable, Y_ca, X_ca, force_skip_prep)
     else
+        # No point in getting a "good" prep when we don't know all the shapes.
+        # The prep is set to `nothing`; the prep-less DifferentiationInterface
+        # methods are used at runtime until `update_prep` creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
         Y_ca_cs = ComponentVector{ComplexF64}()
-        # Doesn't matter if we chose NoPushforwardPrep() or NoPullbackPrep(), since it will be set to the correct thing later in `update_prep`.
-        prep = DifferentiationInterface.NoPushforwardPrep(DifferentiationInterface.signature(compute_adable, Y_ca, ad_backend, X_ca, (dX_ca,); strict=Val{true}()))
-        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, prep)
+        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, nothing)
     end
 
-    return ADExplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+    return ADExplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, f!, params, compute_adable, X_ca, Y_ca, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -136,25 +132,22 @@ function ADExplicitComp(::MatrixFreeReverseFlavor, ad_backend, f!, Y_ca::Compone
         params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(),
         shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
 
-    compute_adable = let params=params
-        (Y, X)->begin
-            f!(Y, X, params)
-            return nothing
-        end
-    end
+    compute_adable = _make_compute_adable(Val(true), f!, params)
 
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0)
         deriv_prep, X_ca_cs, Y_ca_cs = _get_matrix_free_reverse_prep_in_place(ad_backend, compute_adable, Y_ca, X_ca, force_skip_prep)
     else
+        # No point in getting a "good" prep when we don't know all the shapes.
+        # The prep is set to `nothing`; the prep-less DifferentiationInterface
+        # methods are used at runtime until `update_prep` creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
         Y_ca_cs = ComponentVector{ComplexF64}()
-        prep = DifferentiationInterface.NoPullbackPrep(DifferentiationInterface.signature(compute_adable, Y_ca, ad_backend, X_ca, (dY_ca,); strict=Val{true}()))
-        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, prep)
+        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, nothing)
     end
 
-    return ADExplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+    return ADExplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, f!, params, compute_adable, X_ca, Y_ca, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -168,26 +161,24 @@ function ADExplicitComp(::MatrixFreeForwardFlavor, ad_backend, f, X_ca::Componen
         params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(),
         shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
 
-    compute_adable = let params=params
-        (X,)->begin
-            return f(X, params)
-        end
-    end
+    compute_adable = _make_compute_adable(Val(false), f, params)
 
     Y_ca = compute_adable(X_ca)
 
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0)
         deriv_prep, X_ca_cs = _get_matrix_free_forward_prep_out_of_place(ad_backend, compute_adable, Y_ca, X_ca, force_skip_prep)
     else
+        # No point in getting a "good" prep when we don't know all the shapes.
+        # The prep is set to `nothing`; the prep-less DifferentiationInterface
+        # methods are used at runtime until `update_prep` creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
-        prep = DifferentiationInterface.NoPushforwardPrep(DifferentiationInterface.signature(compute_adable, ad_backend, X_ca, (dX_ca,); strict=Val{true}()))
-        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, prep)
+        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, nothing)
     end
 
     Y_ca_cs = nothing
-    return ADExplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, compute_adable, X_ca, nothing, deriv_prep,
+    return ADExplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, f, params, compute_adable, X_ca, nothing, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -201,26 +192,24 @@ function ADExplicitComp(::MatrixFreeReverseFlavor, ad_backend, f, X_ca::Componen
         params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(),
         shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
 
-    compute_adable = let params=params
-        (X,)->begin
-            return f(X, params)
-        end
-    end
+    compute_adable = _make_compute_adable(Val(false), f, params)
 
     Y_ca = compute_adable(X_ca)
 
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0)
         deriv_prep, X_ca_cs = _get_matrix_free_reverse_prep_out_of_place(ad_backend, compute_adable, Y_ca, X_ca, force_skip_prep)
     else
+        # No point in getting a "good" prep when we don't know all the shapes.
+        # The prep is set to `nothing`; the prep-less DifferentiationInterface
+        # methods are used at runtime until `update_prep` creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
-        prep = DifferentiationInterface.NoPullbackPrep(DifferentiationInterface.signature(compute_adable, ad_backend, X_ca, (dY_ca,); strict=Val{true}()))
-        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, prep)
+        deriv_prep = MatrixFreeDerivPrep(dX_ca, dY_ca, nothing)
     end
 
     Y_ca_cs = nothing
-    return ADExplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, compute_adable, X_ca, nothing, deriv_prep,
+    return ADExplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, f, params, compute_adable, X_ca, nothing, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -237,10 +226,10 @@ function update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, true}, input_
         Y_ca = _resize_component_vector(Y_ca_old, output_sizes)
 
         ad_backend = get_backend(self)
-        f! = get_callback(self)
+        f! = _make_compute_adable(Val(true), self.func, self.params)
         deriv_prep, X_ca_cs, Y_ca_cs = _get_matrix_free_forward_prep_in_place(ad_backend, f!, Y_ca, X_ca, false)
 
-        self = ADExplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, f!, X_ca, Y_ca, deriv_prep,
+        self = ADExplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, self.func, self.params, f!, X_ca, Y_ca, deriv_prep,
             self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, Y_ca_cs)
     end
     return self
@@ -255,10 +244,10 @@ function update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, true}, input_
         Y_ca = _resize_component_vector(Y_ca_old, output_sizes)
 
         ad_backend = get_backend(self)
-        f! = get_callback(self)
+        f! = _make_compute_adable(Val(true), self.func, self.params)
         deriv_prep, X_ca_cs, Y_ca_cs = _get_matrix_free_reverse_prep_in_place(ad_backend, f!, Y_ca, X_ca, false)
 
-        self = ADExplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, f!, X_ca, Y_ca, deriv_prep,
+        self = ADExplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, self.func, self.params, f!, X_ca, Y_ca, deriv_prep,
             self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, Y_ca_cs)
     end
     return self
@@ -273,10 +262,10 @@ function update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, false}, input
         Y_ca = _resize_component_vector(Y_ca_old, output_sizes)
 
         ad_backend = get_backend(self)
-        f = get_callback(self)
+        f = _make_compute_adable(Val(false), self.func, self.params)
         deriv_prep, X_ca_cs = _get_matrix_free_forward_prep_out_of_place(ad_backend, f, Y_ca, X_ca, false)
 
-        self = ADExplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, f, X_ca, nothing, deriv_prep,
+        self = ADExplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, self.func, self.params, f, X_ca, nothing, deriv_prep,
             self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, nothing)
     end
     return self
@@ -291,10 +280,10 @@ function update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, false}, input
         Y_ca = _resize_component_vector(Y_ca_old, output_sizes)
 
         ad_backend = get_backend(self)
-        f = get_callback(self)
+        f = _make_compute_adable(Val(false), self.func, self.params)
         deriv_prep, X_ca_cs = _get_matrix_free_reverse_prep_out_of_place(ad_backend, f, Y_ca, X_ca, false)
 
-        self = ADExplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, f, X_ca, nothing, deriv_prep,
+        self = ADExplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, self.func, self.params, f, X_ca, nothing, deriv_prep,
             self.units_dict, self.tags_dict, self.shape_by_conn_dict, self.copy_shape_dict, X_ca_cs, nothing)
     end
     return self
@@ -353,7 +342,14 @@ function _compute_pushforward!(self::ADExplicitComp{MatrixFreeForwardFlavor, tru
     backend = get_backend(self)
 
     # Now actually do the Jacobian-vector product.
+    if prep === nothing
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        # No prep available: fall back to the prep-less DifferentiationInterface
+        # methods, which prepare internally on each call.
+    DifferentiationInterface.pushforward!(compute_adable, Y_ca, (dY_ca,), backend, X_ca, (dX_ca,))
+    else
     DifferentiationInterface.pushforward!(compute_adable, Y_ca, (dY_ca,), prep, backend, X_ca, (dX_ca,))
+    end
 
     # Now copy the output derivatives to `d_outputs`:
     for oname in keys(dY_ca)
@@ -399,7 +395,14 @@ function _compute_pushforward!(self::ADExplicitComp{MatrixFreeForwardFlavor, fal
     backend = get_backend(self)
 
     # Now actually do the Jacobian-vector product.
+    if prep === nothing
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        # No prep available: fall back to the prep-less DifferentiationInterface
+        # methods, which prepare internally on each call.
+    DifferentiationInterface.pushforward!(compute_adable, (dY_ca,), backend, X_ca, (dX_ca,))
+    else
     DifferentiationInterface.pushforward!(compute_adable, (dY_ca,), prep, backend, X_ca, (dX_ca,))
+    end
 
     # Now copy the output derivatives to `d_outputs`:
     for oname in keys(dY_ca)
@@ -448,7 +451,14 @@ function _compute_pullback!(self::ADExplicitComp{MatrixFreeReverseFlavor, true},
     prep = get_prep(self)
 
     # Now actually do the Jacobian-vector product.
+    if prep === nothing
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        # No prep available: fall back to the prep-less DifferentiationInterface
+        # methods, which prepare internally on each call.
+    DifferentiationInterface.pullback!(compute_adable, Y_ca, (dX_ca,), backend, X_ca, (dY_ca,))
+    else
     DifferentiationInterface.pullback!(compute_adable, Y_ca, (dX_ca,), prep, backend, X_ca, (dY_ca,))
+    end
 
     # Now copy the input derivatives to `d_inputs`:
     for iname in keys(dX_ca)
@@ -494,7 +504,14 @@ function _compute_pullback!(self::ADExplicitComp{MatrixFreeReverseFlavor, false}
     prep = get_prep(self)
 
     # Now actually do the Jacobian-vector product.
+    if prep === nothing
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        # No prep available: fall back to the prep-less DifferentiationInterface
+        # methods, which prepare internally on each call.
+    DifferentiationInterface.pullback!(compute_adable, (dX_ca,), backend, X_ca, (dY_ca,))
+    else
     DifferentiationInterface.pullback!(compute_adable, (dX_ca,), prep, backend, X_ca, (dY_ca,))
+    end
 
     # Now copy the input derivatives to `d_inputs`:
     for iname in keys(dX_ca)

@@ -74,16 +74,8 @@ Create an in-place [`DenseFlavor`](@ref) [`ADExplicitComp`](@ref).
 """
 function ADExplicitComp(::DenseFlavor, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
 
-    # Create a new user-defined function that captures the `params` argument.
-    # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
-    compute_adable = let params=params
-        (Y, X)->begin
-            f!(Y, X, params)
-            return nothing
-        end
-    end
-
     # Get the prep-related stuff.
+    compute_adable = _make_compute_adable(Val(true), f!, params)
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
         deriv_prep, X_ca_cs, Y_ca_cs = _get_dense_prep_stuff(ad_backend, compute_adable, Y_ca, X_ca)
     else
@@ -92,7 +84,7 @@ function ADExplicitComp(::DenseFlavor, ad_backend::TAD, f!, Y_ca::ComponentVecto
         X_ca_cs = Y_ca_cs = nothing
     end
 
-    return ADExplicitComp{DenseFlavor, true}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+    return ADExplicitComp{DenseFlavor, true}(ad_backend, f!, params, compute_adable, X_ca, Y_ca, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -116,13 +108,7 @@ Create an out-of-place [`DenseFlavor`](@ref) [`ADExplicitComp`](@ref).
 """
 function ADExplicitComp(::DenseFlavor, ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
 
-    # Create a new user-defined function that captures the `params` argument.
-    # https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
-    compute_adable = let params=params
-        (X,)->begin
-            return f(X, params)
-        end
-    end
+    compute_adable = _make_compute_adable(Val(false), f, params)
 
     Y_ca = compute_adable(X_ca)
 
@@ -136,7 +122,7 @@ function ADExplicitComp(::DenseFlavor, ad_backend::TAD, f, X_ca::ComponentVector
     end
 
     Y_ca_cs = nothing
-    return ADExplicitComp{DenseFlavor, false}(ad_backend, compute_adable, X_ca, Y_ca, deriv_prep,
+    return ADExplicitComp{DenseFlavor, false}(ad_backend, f, params, compute_adable, X_ca, Y_ca, deriv_prep,
         units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
 end
 
@@ -156,8 +142,8 @@ function update_prep(self::ADExplicitComp{DenseFlavor, true}, input_sizes::Abstr
 
         # Get the new sparsity stuff.
         ad_backend = get_backend(self)
-        f! = get_callback(self)
-        deriv_prep, X_ca_cs, Y_ca_cs = _get_dense_prep_stuff(ad_backend, f!, Y_ca, X_ca)
+        compute_adable = _make_compute_adable(Val(true), self.func, self.params)
+        deriv_prep, X_ca_cs, Y_ca_cs = _get_dense_prep_stuff(ad_backend, compute_adable, Y_ca, X_ca)
 
         # Now just copy things over.
         units_dict = self.units_dict
@@ -165,7 +151,7 @@ function update_prep(self::ADExplicitComp{DenseFlavor, true}, input_sizes::Abstr
         shape_by_conn_dict = self.shape_by_conn_dict
         copy_shape_dict = self.copy_shape_dict
 
-        self = ADExplicitComp{DenseFlavor, true}(ad_backend, f!, X_ca, Y_ca, deriv_prep,
+        self = ADExplicitComp{DenseFlavor, true}(ad_backend, self.func, self.params, compute_adable, X_ca, Y_ca, deriv_prep,
             units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, Y_ca_cs)
     end
 
@@ -181,8 +167,8 @@ function update_prep(self::ADExplicitComp{DenseFlavor, false}, input_sizes::Abst
 
         # Get the new sparsity stuff.
         ad_backend = get_backend(self)
-        f = get_callback(self)
-        deriv_prep, X_ca_cs = _get_dense_prep_stuff(ad_backend, f, X_ca)
+        compute_adable = _make_compute_adable(Val(false), self.func, self.params)
+        deriv_prep, X_ca_cs = _get_dense_prep_stuff(ad_backend, compute_adable, X_ca)
 
         # Now just copy things over.
         units_dict = self.units_dict
@@ -190,7 +176,7 @@ function update_prep(self::ADExplicitComp{DenseFlavor, false}, input_sizes::Abst
         shape_by_conn_dict = self.shape_by_conn_dict
         copy_shape_dict = self.copy_shape_dict
 
-        self = ADExplicitComp{DenseFlavor, false}(ad_backend, f, X_ca, nothing, deriv_prep,
+        self = ADExplicitComp{DenseFlavor, false}(ad_backend, self.func, self.params, compute_adable, X_ca, nothing, deriv_prep,
             units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, X_ca_cs, nothing)
     end
 
@@ -225,6 +211,7 @@ function OpenMDAOCore.compute_partials!(self::ADExplicitComp{DenseFlavor, true},
     Y_ca = get_output_ca(self)
     J_ca = get_jacobian_ca(self)
     prep = get_prep(self)
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
     ad_backend = get_backend(self)
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca, prep, ad_backend, X_ca)
 
@@ -267,6 +254,7 @@ function OpenMDAOCore.compute_partials!(self::ADExplicitComp{DenseFlavor, false}
     f = get_callback(self)
     J_ca = get_jacobian_ca(self)
     prep = get_prep(self)
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
     ad_backend = get_backend(self)
     DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, X_ca)
 

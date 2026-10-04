@@ -274,6 +274,10 @@ end
     comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
+    # `setup` declares no partials; they come from `setup_partials` (which
+    # OpenMDAO calls after the shapes are known).
+    @test isempty(partials_data)
+    comp, partials_data = OpenMDAOCore.setup_partials(comp, Dict{String,Any}(), Dict{String,Any}())
     @test length(partials_data) == 1
     @test partials_data[1].of == "*" && partials_data[1].wrt == "*"
 
@@ -285,6 +289,8 @@ end
     comp = create_implicit_component(SparseFlavor(), Val(true), ad_backend, f_implicit2!, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
+    @test isempty(partials_data)
+    comp, partials_data = OpenMDAOCore.setup_partials(comp, Dict{String,Any}(), Dict{String,Any}())
     pairs = Set((pd.of, pd.wrt) for pd in partials_data)
     @test ("y", "y") in pairs
     @test ("y", "x") in pairs
@@ -301,11 +307,45 @@ end
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
     @test isempty(partials_data)
+    comp, partials_data = OpenMDAOCore.setup_partials(comp, Dict{String,Any}(), Dict{String,Any}())
+    @test isempty(partials_data)
 
     # --- Sparse out-of-place ---
     comp = create_implicit_component(SparseFlavor(), Val(false), ad_backend, f_implicit2, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
+    @test isempty(partials_data)
+    comp, partials_data = OpenMDAOCore.setup_partials(comp, Dict{String,Any}(), Dict{String,Any}())
     pairs = Set((pd.of, pd.wrt) for pd in partials_data)
     @test ("y", "y") in pairs && ("y", "x") in pairs
+end
+
+@testitem "ADImplicitComp shape_by_conn, dense" setup=[ADCallbacks] begin
+    doit_in_place(AutoDenseImplicitShapeByConnTestPrep(4, 3, "forwarddiff"))
+end
+
+@testitem "ADImplicitComp setup, shape_by_conn flags" begin
+    using OpenMDAOCore
+    using ADTypes: ADTypes
+    using ComponentArrays
+    using ForwardDiff
+    using Test
+
+    function f_implicit!(R, Y, X, params)
+        R[:y] = only(Y[:y])^2 - only(X[:x])
+        return nothing
+    end
+
+    Y_ca = ComponentVector(y=1.0)
+    X_ca = ComponentVector(x=4.0)
+    shape_by_conn_dict = Dict(:y=>true)
+    copy_shape_dict = Dict(:x=>:y)
+    comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca;
+        shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict)
+    input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
+    @test only(input_data).shape_by_conn == false
+    @test only(input_data).copy_shape == "y"
+    @test only(output_data).shape_by_conn == true
+    @test only(output_data).copy_shape === nothing
+    @test isempty(partials_data)
 end
