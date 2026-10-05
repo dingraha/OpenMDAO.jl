@@ -594,7 +594,7 @@ function OpenMDAOCore.setup_partials(self::ADImplicitComp, input_sizes, output_s
     input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
     output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
 
-    self_new = update_prep(self, input_sizes_ca, output_sizes_ca)
+    self_new = _update_prep(self, input_sizes_ca, output_sizes_ca)
 
     return self_new, get_partials_data(self_new)
 end

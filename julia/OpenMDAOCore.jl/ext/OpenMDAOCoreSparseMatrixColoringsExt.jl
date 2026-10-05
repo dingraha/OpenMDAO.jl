@@ -300,7 +300,7 @@ end
 # (`get_jacobian_ca`, `get_rows_cols_dict`, `has_*`) are declared in the parent
 # `OpenMDAOCore` module (in `abstract_ad.jl`) so they can be imported without
 # the extension loaded. Only the `SparseFlavor` constructors and the
-# `compute_partials!`/`setup_partials`/`update_prep`/`get_partials_data` methods
+# `compute_partials!`/`setup_partials`/`_update_prep`/`get_partials_data` methods
 # below require `SparseArrays`/`SparseMatrixColorings` and stay here.
 
 """
@@ -320,7 +320,7 @@ Create an in-place [`SparseFlavor`](@ref) [`ADExplicitComp`](@ref).
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
 function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
@@ -360,7 +360,7 @@ Create an out-of-place [`SparseFlavor`](@ref) [`ADExplicitComp`](@ref).
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
 function OpenMDAOCore.ADExplicitComp(::OpenMDAOCore.SparseFlavor, ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
 
@@ -426,7 +426,7 @@ function _get_sparse_prep_stuff(ad_backend, f, X_ca)
     return OpenMDAOCore.SparseDerivPrep(J_ca_sparse, prep, rcdict), X_ca_cs
 end
 
-function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function OpenMDAOCore._update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
 
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         X_ca_old = OpenMDAOCore.get_input_ca(self)
@@ -448,7 +448,7 @@ function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore
     return self
 end
 
-function OpenMDAOCore.update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function OpenMDAOCore._update_prep(self::OpenMDAOCore.ADExplicitComp{OpenMDAOCore.SparseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
 
     if length(input_sizes) > 0
         X_ca_old = OpenMDAOCore.get_input_ca(self)
@@ -509,7 +509,7 @@ function OpenMDAOCore.setup_partials(self::OpenMDAOCore.ADExplicitComp{OpenMDAOC
     input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
     output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
 
-    self_new = OpenMDAOCore.update_prep(self, input_sizes_ca, output_sizes_ca)
+    self_new = OpenMDAOCore._update_prep(self, input_sizes_ca, output_sizes_ca)
 
     # Now finally get the partials data.
     return self_new, OpenMDAOCore.get_partials_data(self_new)
@@ -529,7 +529,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
     prep = OpenMDAOCore.get_prep(self)
     ad_backend = OpenMDAOCore.get_backend(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
@@ -583,7 +583,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
     prep = OpenMDAOCore.get_prep(self)
     ad_backend = OpenMDAOCore.get_backend(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     DifferentiationInterface.jacobian!(f, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
@@ -665,8 +665,8 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, a
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
         deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca)
     else
-        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
-        # `setup_partials`).
+        # Shapes not yet known: defer to `setup_partials` (called by OpenMDAO
+        # during problem setup).
         deriv_prep = OpenMDAOCore.SparseDerivPrep(nothing, nothing, Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}())
         YX_ca_cs = R_ca_cs = nothing
     end
@@ -698,8 +698,8 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, 
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
         deriv_prep, YX_ca_cs = _get_sparse_prep_stuff(ad_backend, compute_adable, YX_ca)
     else
-        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
-        # `setup_partials`).
+        # Shapes not yet known: defer to `setup_partials` (called by OpenMDAO
+        # during problem setup).
         deriv_prep = OpenMDAOCore.SparseDerivPrep(nothing, nothing, Dict{Tuple{Symbol,Symbol}, Tuple{Vector{Int},Vector{Int}}}())
         YX_ca_cs = nothing
     end
@@ -712,7 +712,7 @@ end
 
 # Compute dR/d(Y, X) with a single sparse `jacobian!` call, then scatter the
 # sub-Jacobians to the `partials` dict using the sparsity pattern.
-function OpenMDAOCore.update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function OpenMDAOCore._update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = OpenMDAOCore.get_output_ca(comp)
         X_ca_old = OpenMDAOCore.get_input_ca(comp)
@@ -753,7 +753,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     J_ca = OpenMDAOCore.get_jacobian_ca(comp)
     prep = OpenMDAOCore.get_prep(comp)
     ad_backend = OpenMDAOCore.get_backend(comp)
-    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     DifferentiationInterface.jacobian!(f!, R_ca, J_ca, prep, ad_backend, YX_ca)
 
     rcdict = OpenMDAOCore.get_rows_cols_dict(comp)
@@ -803,7 +803,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     return nothing
 end
 
-function OpenMDAOCore.update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function OpenMDAOCore._update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = OpenMDAOCore.get_output_ca(comp)
         X_ca_old = OpenMDAOCore.get_input_ca(comp)
@@ -845,7 +845,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     J_ca = OpenMDAOCore.get_jacobian_ca(comp)
     prep = OpenMDAOCore.get_prep(comp)
     ad_backend = OpenMDAOCore.get_backend(comp)
-    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, YX_ca)
 
     rcdict = OpenMDAOCore.get_rows_cols_dict(comp)

@@ -1097,7 +1097,7 @@ function doit_in_place(prep::AutoDenseShapeByConnTestPrep)
     M = prep.M
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     # Make sure the component vectors were set appropriately.
     X_ca = get_input_ca(comp)
     @test X_ca.a ≈ 2.0
@@ -1137,7 +1137,7 @@ function doit_out_of_place(prep::AutoDenseShapeByConnTestPrep)
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     # Make sure the component vectors were set appropriately.
     X_ca = get_input_ca(comp)
     @test X_ca.a ≈ 2.0
@@ -1251,7 +1251,7 @@ function doit_in_place_forward(prep::AutoMatrixFreeShapeByConnTestPrep)
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     # Make sure the component vectors were set appropriately.
     X_ca = get_input_ca(comp)
     @test X_ca.a ≈ 2.0
@@ -1295,7 +1295,7 @@ function doit_in_place_reverse(prep::AutoMatrixFreeShapeByConnTestPrep)
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     # Make sure the component vectors were set appropriately.
     X_ca = get_input_ca(comp)
     @test X_ca.a ≈ 2.0
@@ -1339,7 +1339,7 @@ function doit_out_of_place_forward(prep::AutoMatrixFreeShapeByConnTestPrep)
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     # Make sure the component vectors were set appropriately.
     X_ca = get_input_ca(comp)
     @test X_ca.a ≈ 2.0
@@ -1385,7 +1385,7 @@ function doit_out_of_place_reverse(prep::AutoMatrixFreeShapeByConnTestPrep)
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     # Make sure the component vectors were set appropriately.
     X_ca = get_input_ca(comp)
     @test X_ca.a ≈ 2.0
@@ -1650,7 +1650,7 @@ function doit_in_place(prep::AutosparseAutomaticShapeByConnTestPrep)
     M = prep.M
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     do_compute_check(comp)
     do_compute_partials_check(comp)
     # I don't think zygote works with in-place callback functions.
@@ -1689,7 +1689,7 @@ function doit_out_of_place(prep::AutosparseAutomaticShapeByConnTestPrep)
     N = prep.N
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
     do_compute_check(comp)
     do_compute_partials_check(comp)
     # Got exception outside of a @test
@@ -2772,7 +2772,7 @@ function doit_in_place(prep::AutoDenseImplicitShapeByConnTestPrep)
     M = prep.M
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
 
     do_compute_residuals_check(comp)
     do_compute_partials_check(comp)
@@ -2821,7 +2821,7 @@ function doit_in_place_forward(prep::AutoMatrixFreeImplicitShapeByConnTestPrep)
     M = prep.M
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
 
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_forward(comp)
@@ -2840,7 +2840,7 @@ function doit_in_place_reverse(prep::AutoMatrixFreeImplicitShapeByConnTestPrep)
     M = prep.M
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
 
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_reverse(comp)
@@ -2890,7 +2890,7 @@ function doit_in_place(prep::AutosparseImplicitAutomaticShapeByConnTestPrep)
     M = prep.M
     input_sizes = Dict(:b=>N, :d=>(M, N))
     output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
-    comp = OpenMDAOCore.update_prep(comp, input_sizes, output_sizes)
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
 
     do_compute_residuals_check(comp)
     do_compute_partials_check(comp)

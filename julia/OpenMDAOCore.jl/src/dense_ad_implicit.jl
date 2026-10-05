@@ -19,7 +19,7 @@ Create an in-place [`DenseFlavor`](@ref) [`ADImplicitComp`](@ref).
 
 # Keyword Arguments
 * `params`: parameters passed to the fourth argument to `f!`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
 function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     # Check for name collisions between output and input keys.
@@ -43,7 +43,7 @@ function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::C
 
     # Get the prep-related stuff. If any variables get their shapes from
     # connections (or prep is explicitly skipped), the shapes aren't known yet,
-    # so defer everything to `update_prep` (called by OpenMDAO's `setup_partials`).
+    # so defer everything to `setup_partials` (called by OpenMDAO during problem setup).
     compute_adable = _make_implicit_compute_adable(true, f!, params, Y_range, X_range, Y_axes, X_axes)
     if (!any(values(shape_by_conn_dict))) && (length(copy_shape_dict) == 0) && (!force_skip_prep)
         deriv_prep, YX_ca_cs, R_ca_cs = _get_dense_prep_stuff(ad_backend, compute_adable, R_ca, YX_ca)
@@ -68,7 +68,7 @@ Create an out-of-place [`DenseFlavor`](@ref) [`ADImplicitComp`](@ref).
 
 # Keyword Arguments
 * `params`: parameters passed to the third argument to `f`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
 function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
     # Check for name collisions between output and input keys.
@@ -141,7 +141,7 @@ function _scatter_implicit_partials!(J_ca, okeys, ikeys, partials)
     return nothing
 end
 
-function update_prep(comp::ADImplicitComp{DenseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(comp::ADImplicitComp{DenseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = get_output_ca(comp)
         X_ca_old = get_input_ca(comp)
@@ -166,7 +166,7 @@ function update_prep(comp::ADImplicitComp{DenseFlavor, true}, input_sizes::Abstr
     return comp
 end
 
-function update_prep(comp::ADImplicitComp{DenseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(comp::ADImplicitComp{DenseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = get_output_ca(comp)
         X_ca_old = get_input_ca(comp)
@@ -213,7 +213,7 @@ function linearize!(comp::ADImplicitComp{DenseFlavor, true}, inputs, outputs, pa
     prep = get_prep(comp)
     ad_backend = get_backend(comp)
     if J_ca === nothing
-        error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     elseif prep === nothing
         DifferentiationInterface.jacobian!(f!, R_ca, J_ca, ad_backend, YX_ca)
     else
@@ -243,7 +243,7 @@ function linearize!(comp::ADImplicitComp{DenseFlavor, false}, inputs, outputs, p
     prep = get_prep(comp)
     ad_backend = get_backend(comp)
     if J_ca === nothing
-        error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     elseif prep === nothing
         DifferentiationInterface.jacobian!(f, J_ca, ad_backend, YX_ca)
     else

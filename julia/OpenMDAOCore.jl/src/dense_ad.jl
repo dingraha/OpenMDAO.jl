@@ -2,7 +2,7 @@
 #
 # The `ADExplicitComp{DenseFlavor, ...}` *type* and the shared accessors are
 # declared in `abstract_ad.jl`. This file provides the flavor-specific
-# constructors and the `compute_partials!`/`setup_partials`/`update_prep`/
+# constructors and the `compute_partials!`/`setup_partials`/`_update_prep`/
 # `get_partials_data` methods.
 
 using ADTypes: ADTypes
@@ -70,7 +70,7 @@ Create an in-place [`DenseFlavor`](@ref) [`ADExplicitComp`](@ref).
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
 function ADExplicitComp(::DenseFlavor, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
 
@@ -104,7 +104,7 @@ Create an out-of-place [`DenseFlavor`](@ref) [`ADExplicitComp`](@ref).
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
 function ADExplicitComp(::DenseFlavor, ad_backend::TAD, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
 
@@ -128,7 +128,7 @@ end
 
 # `get_jacobian_ca` for `DenseFlavor` is defined in `abstract_ad.jl`.
 
-function update_prep(self::ADExplicitComp{DenseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(self::ADExplicitComp{DenseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
 
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         X_ca_old = get_input_ca(self)
@@ -158,7 +158,7 @@ function update_prep(self::ADExplicitComp{DenseFlavor, true}, input_sizes::Abstr
     return self
 end
 
-function update_prep(self::ADExplicitComp{DenseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(self::ADExplicitComp{DenseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
 
     if length(input_sizes) > 0
         X_ca_old = get_input_ca(self)
@@ -192,7 +192,7 @@ function setup_partials(self::ADExplicitComp{DenseFlavor}, input_sizes, output_s
     input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
     output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
 
-    self_new = update_prep(self, input_sizes_ca, output_sizes_ca)
+    self_new = _update_prep(self, input_sizes_ca, output_sizes_ca)
 
     # Now finally get the partials data.
     return self_new, get_partials_data(self_new)
@@ -211,7 +211,7 @@ function OpenMDAOCore.compute_partials!(self::ADExplicitComp{DenseFlavor, true},
     Y_ca = get_output_ca(self)
     J_ca = get_jacobian_ca(self)
     prep = get_prep(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     ad_backend = get_backend(self)
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca, prep, ad_backend, X_ca)
 
@@ -254,7 +254,7 @@ function OpenMDAOCore.compute_partials!(self::ADExplicitComp{DenseFlavor, false}
     f = get_callback(self)
     J_ca = get_jacobian_ca(self)
     prep = get_prep(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
     ad_backend = get_backend(self)
     DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, X_ca)
 

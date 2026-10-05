@@ -31,7 +31,7 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
 """
 function create_explicit_component(flavor::DerivativeFlavor, ad_backend::TAD,
         f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
@@ -70,7 +70,7 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
 """
 function create_explicit_component(flavor::DerivativeFlavor, ad_backend::TAD,
         f::Function, X_ca::ComponentVector;
@@ -114,7 +114,7 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
 """
 function create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend::TAD,
         f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
@@ -150,7 +150,7 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
-* `force_skip_prep`: if true, defer creating internal arrays and other structs until the user calls `update_prep`.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
 """
 function create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend::TAD,
         f::Function, Y_ca::ComponentVector, X_ca::ComponentVector;

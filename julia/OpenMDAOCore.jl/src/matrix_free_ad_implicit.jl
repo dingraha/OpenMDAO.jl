@@ -35,8 +35,8 @@ function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{true}, ad_backend::TAD,
         deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_forward_prep_in_place(
             ad_backend, compute_adable, R_ca, YX_ca, force_skip_prep)
     else
-        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
-        # `setup_partials`). The prep-less DifferentiationInterface methods are
+        # Shapes not yet known: defer to `setup_partials` (called by OpenMDAO
+        # during problem setup). The prep-less DifferentiationInterface methods are
         # used at runtime until then.
         dYX_ca = ComponentVector{eltype(YX_ca)}()
         dR_ca = ComponentVector{eltype(R_ca)}()
@@ -72,8 +72,8 @@ function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{false}, ad_backend::TAD
         deriv_prep, YX_ca_cs = _get_matrix_free_forward_prep_out_of_place(
             ad_backend, compute_adable, compute_adable(YX_ca), YX_ca, force_skip_prep)
     else
-        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
-        # `setup_partials`). The prep-less DifferentiationInterface methods are
+        # Shapes not yet known: defer to `setup_partials` (called by OpenMDAO
+        # during problem setup). The prep-less DifferentiationInterface methods are
         # used at runtime until then.
         dYX_ca = ComponentVector{eltype(YX_ca)}()
         dR_ca = ComponentVector{eltype(R_ca)}()
@@ -113,8 +113,8 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{true}, ad_backend::TAD,
         deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_reverse_prep_in_place(
             ad_backend, compute_adable, R_ca, YX_ca, force_skip_prep)
     else
-        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
-        # `setup_partials`). The prep-less DifferentiationInterface methods are
+        # Shapes not yet known: defer to `setup_partials` (called by OpenMDAO
+        # during problem setup). The prep-less DifferentiationInterface methods are
         # used at runtime until then.
         dYX_ca = ComponentVector{eltype(YX_ca)}()
         dR_ca = ComponentVector{eltype(R_ca)}()
@@ -150,8 +150,8 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{false}, ad_backend::TAD
         deriv_prep, YX_ca_cs = _get_matrix_free_reverse_prep_out_of_place(
             ad_backend, compute_adable, compute_adable(YX_ca), YX_ca, force_skip_prep)
     else
-        # Shapes not yet known: defer to `update_prep` (called by OpenMDAO's
-        # `setup_partials`). The prep-less DifferentiationInterface methods are
+        # Shapes not yet known: defer to `setup_partials` (called by OpenMDAO
+        # during problem setup). The prep-less DifferentiationInterface methods are
         # used at runtime until then.
         dYX_ca = ComponentVector{eltype(YX_ca)}()
         dR_ca = ComponentVector{eltype(R_ca)}()
@@ -165,7 +165,7 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{false}, ad_backend::TAD
     return ADImplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
 end
 
-function update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = get_output_ca(comp)
         X_ca_old = get_input_ca(comp)
@@ -218,7 +218,7 @@ function _compute_implicit_pushforward!(comp::ADImplicitComp{MatrixFreeForwardFl
     backend = get_backend(comp)
 
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does this automatically during problem setup).")
+        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.
@@ -239,7 +239,7 @@ function _compute_implicit_pushforward!(comp::ADImplicitComp{MatrixFreeForwardFl
     return nothing
 end
 
-function update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = get_output_ca(comp)
         X_ca_old = get_input_ca(comp)
@@ -291,7 +291,7 @@ function _compute_implicit_pushforward!(comp::ADImplicitComp{MatrixFreeForwardFl
     backend = get_backend(comp)
 
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does this automatically during problem setup).")
+        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.
@@ -312,7 +312,7 @@ function _compute_implicit_pushforward!(comp::ADImplicitComp{MatrixFreeForwardFl
     return nothing
 end
 
-function update_prep(comp::ADImplicitComp{MatrixFreeReverseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(comp::ADImplicitComp{MatrixFreeReverseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = get_output_ca(comp)
         X_ca_old = get_input_ca(comp)
@@ -361,7 +361,7 @@ function _compute_implicit_pullback!(comp::ADImplicitComp{MatrixFreeReverseFlavo
     prep = get_prep(comp)
 
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does this automatically during problem setup).")
+        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.
@@ -391,7 +391,7 @@ function _compute_implicit_pullback!(comp::ADImplicitComp{MatrixFreeReverseFlavo
     return nothing
 end
 
-function update_prep(comp::ADImplicitComp{MatrixFreeReverseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(comp::ADImplicitComp{MatrixFreeReverseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         Y_ca_old = get_output_ca(comp)
         X_ca_old = get_input_ca(comp)
@@ -439,7 +439,7 @@ function _compute_implicit_pullback!(comp::ADImplicitComp{MatrixFreeReverseFlavo
     prep = get_prep(comp)
 
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does this automatically during problem setup).")
+        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.

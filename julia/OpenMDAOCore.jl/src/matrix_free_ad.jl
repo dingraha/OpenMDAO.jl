@@ -4,7 +4,7 @@
 #
 # The `ADExplicitComp{<:MatrixFreeFlavor, ...}` *type* and the shared accessors
 # (`get_dinput_ca`, `get_doutput_ca`, `has_*`) are declared in `abstract_ad.jl`.
-# This file provides the flavor-specific constructors, `update_prep`,
+# This file provides the flavor-specific constructors, `_update_prep`,
 # `setup_partials`, and `compute_jacvec_product!` (+ internals).
 
 using ADTypes: ADTypes
@@ -110,7 +110,8 @@ function ADExplicitComp(::MatrixFreeForwardFlavor, ad_backend, f!, Y_ca::Compone
     else
         # No point in getting a "good" prep when we don't know all the shapes.
         # The prep is set to `nothing`; the prep-less DifferentiationInterface
-        # methods are used at runtime until `update_prep` creates the real prep.
+        # methods are used at runtime until OpenMDAO's `setup_partials` call
+        # creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
@@ -139,7 +140,8 @@ function ADExplicitComp(::MatrixFreeReverseFlavor, ad_backend, f!, Y_ca::Compone
     else
         # No point in getting a "good" prep when we don't know all the shapes.
         # The prep is set to `nothing`; the prep-less DifferentiationInterface
-        # methods are used at runtime until `update_prep` creates the real prep.
+        # methods are used at runtime until OpenMDAO's `setup_partials` call
+        # creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
@@ -170,7 +172,8 @@ function ADExplicitComp(::MatrixFreeForwardFlavor, ad_backend, f, X_ca::Componen
     else
         # No point in getting a "good" prep when we don't know all the shapes.
         # The prep is set to `nothing`; the prep-less DifferentiationInterface
-        # methods are used at runtime until `update_prep` creates the real prep.
+        # methods are used at runtime until OpenMDAO's `setup_partials` call
+        # creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
@@ -201,7 +204,8 @@ function ADExplicitComp(::MatrixFreeReverseFlavor, ad_backend, f, X_ca::Componen
     else
         # No point in getting a "good" prep when we don't know all the shapes.
         # The prep is set to `nothing`; the prep-less DifferentiationInterface
-        # methods are used at runtime until `update_prep` creates the real prep.
+        # methods are used at runtime until OpenMDAO's `setup_partials` call
+        # creates the real prep.
         dX_ca = ComponentVector{eltype(X_ca)}()
         dY_ca = ComponentVector{eltype(Y_ca)}()
         X_ca_cs = ComponentVector{ComplexF64}()
@@ -214,10 +218,10 @@ function ADExplicitComp(::MatrixFreeReverseFlavor, ad_backend, f, X_ca::Componen
 end
 
 # ---------------------------------------------------------------------------
-# update_prep / setup_partials / get_partials_data
+# _update_prep / setup_partials / get_partials_data
 # ---------------------------------------------------------------------------
 
-function update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         X_ca_old = get_input_ca(self)
         Y_ca_old = get_output_ca(self)
@@ -235,7 +239,7 @@ function update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, true}, input_
     return self
 end
 
-function update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         X_ca_old = get_input_ca(self)
         Y_ca_old = get_output_ca(self)
@@ -253,7 +257,7 @@ function update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, true}, input_
     return self
 end
 
-function update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         X_ca_old = get_input_ca(self)
         Y_ca_old = get_output_ca(self)
@@ -271,7 +275,7 @@ function update_prep(self::ADExplicitComp{MatrixFreeForwardFlavor, false}, input
     return self
 end
 
-function update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
+function _update_prep(self::ADExplicitComp{MatrixFreeReverseFlavor, false}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
     if (length(input_sizes) > 0) || (length(output_sizes) > 0)
         X_ca_old = get_input_ca(self)
         Y_ca_old = get_output_ca(self)
@@ -298,7 +302,7 @@ function setup_partials(self::ADExplicitComp{<:MatrixFreeFlavor}, input_sizes, o
     input_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in input_sizes)
     output_sizes_ca = Dict{Symbol,Any}(Symbol(k)=>sz for (k, sz) in output_sizes)
 
-    self_new = update_prep(self, input_sizes_ca, output_sizes_ca)
+    self_new = _update_prep(self, input_sizes_ca, output_sizes_ca)
 
     return self_new, get_partials_data(self_new)
 end
@@ -343,7 +347,7 @@ function _compute_pushforward!(self::ADExplicitComp{MatrixFreeForwardFlavor, tru
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pushforward!(compute_adable, Y_ca, (dY_ca,), backend, X_ca, (dX_ca,))
@@ -396,7 +400,7 @@ function _compute_pushforward!(self::ADExplicitComp{MatrixFreeForwardFlavor, fal
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pushforward!(compute_adable, (dY_ca,), backend, X_ca, (dX_ca,))
@@ -452,7 +456,7 @@ function _compute_pullback!(self::ADExplicitComp{MatrixFreeReverseFlavor, true},
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pullback!(compute_adable, Y_ca, (dX_ca,), backend, X_ca, (dY_ca,))
@@ -505,7 +509,7 @@ function _compute_pullback!(self::ADExplicitComp{MatrixFreeReverseFlavor, false}
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables and `update_prep` has not been called yet (OpenMDAO does the latter automatically during problem setup).")
+        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pullback!(compute_adable, (dX_ca,), backend, X_ca, (dY_ca,))
