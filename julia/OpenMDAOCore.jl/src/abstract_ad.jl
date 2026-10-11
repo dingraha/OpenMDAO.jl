@@ -634,7 +634,11 @@ has_apply_linear(self::ADImplicitComp{<:MatrixFreeFlavor}) = true
 # ---------------------------------------------------------------------------
 
 function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, true}, inputs, outputs, residuals)
-    TF = eltype(valtype(inputs))
+    # Note: `eltype(valtype(inputs))` returns `Any` for the `Dict{String, Any}` that
+    # omjlcomps passes in, so use the first input's element type instead (mirroring
+    # `compute!` for the explicit comps).
+    TF = eltype(inputs[first(keys(inputs))])
+    @debug "apply_nonlinear!" typeof(inputs) valtype(inputs) TF
     YX_ca = get_combined_ca(TF, comp)
     R_ca = get_residual_ca(TF, comp)
 
@@ -664,7 +668,10 @@ function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, true}, inputs
 end
 
 function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, false}, inputs, outputs, residuals)
-    TF = eltype(valtype(inputs))
+    # Note: `eltype(valtype(inputs))` returns `Any` for the `Dict{String, Any}` that
+    # omjlcomps passes in, so use the first input's element type instead (mirroring
+    # `compute!` for the explicit comps).
+    TF = eltype(inputs[first(keys(inputs))])
     YX_ca = get_combined_ca(TF, comp)
 
     # Copy outputs (states) and inputs into the combined YX vector
