@@ -48,9 +48,10 @@ end
 
 # Residual for the shape_by_conn test component:
 #
-#     R.z[i] = 2*y[i]^2 + 1 - z[i]
+#     R.z[i] = scale*y[i]^2 + a - z[i]
 #
-# The exact solution is z = 2*y.^2 .+ 1.
+# where `scale` and `a` are component parameters. The exact solution is
+# z = scale*y.^2 .+ a.
 function f_implicit_sbc!(R, Y, X, params)
     a = params.a
     y = @view X[:y]
@@ -102,6 +103,19 @@ function get_matrix_free_implicit_test_comp(; n, a, reverse)
     end
     return OpenMDAOCore.create_implicit_component(
         flavor, Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca; params=(a=a,))
+end
+
+function get_dense_implicit_units_tags_test_comp(; n, a)
+    # `z2` and `y` are deliberately left out of the dicts so the defaults
+    # ("unitless" units and no tags) are exercised too.
+    units_dict = Dict(:x=>"m", :z1=>"kg")
+    tags_dict = Dict(:x=>["tag_x"], :z1=>["tag_z1a", "tag_z1b"])
+    ad_backend = ADTypes.AutoForwardDiff()
+    Y_ca = ComponentVector(z1=zeros(n), z2=0.0)
+    X_ca = ComponentVector(x=2.0, y=ones(n))
+    return OpenMDAOCore.create_implicit_component(
+        OpenMDAOCore.DenseFlavor(), Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca;
+        params=(a=a,), units_dict=units_dict, tags_dict=tags_dict)
 end
 
 function get_dense_implicit_shape_by_conn_test_comp(; n, a, scale)

@@ -638,7 +638,6 @@ function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, true}, inputs
     # omjlcomps passes in, so use the first input's element type instead (mirroring
     # `compute!` for the explicit comps).
     TF = eltype(inputs[first(keys(inputs))])
-    @debug "apply_nonlinear!" typeof(inputs) valtype(inputs) TF
     YX_ca = get_combined_ca(TF, comp)
     R_ca = get_residual_ca(TF, comp)
 

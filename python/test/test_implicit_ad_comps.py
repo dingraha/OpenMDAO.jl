@@ -23,7 +23,6 @@ import unittest
 import numpy as np
 
 import openmdao.api as om
-from openmdao.utils.assert_utils import assert_near_equal
 from openmdao.utils.testing_utils import use_tempdirs
 
 from omjlcomps import JuliaImplicitComp
@@ -269,6 +268,50 @@ class TestMatrixFreeReverseImplicitAD(unittest.TestCase):
         # d_outputs gets the dR/dz contribution: -seed on z1, nothing on z2.
         np.testing.assert_allclose(d_outputs["z1"], -np.ones(n), rtol=1e-10)
         np.testing.assert_allclose(d_outputs["z2"], np.zeros(1), rtol=1e-10)
+
+
+@use_tempdirs
+class TestDenseImplicitADUnitsTags(unittest.TestCase):
+    """Verify that `units_dict`/`tags_dict` metadata propagates from the Julia
+    component through omjlcomps into OpenMDAO's variable metadata.
+
+    `y` and `z2` are deliberately left out of `units_dict`/`tags_dict` so the
+    defaults ("unitless" units and no tags) are covered as well.
+    """
+
+    def setUp(self):
+        p = self.p = om.Problem()
+        n = self.n = 5
+        a = self.a = 3.0
+
+        jlcomp = jl.get_dense_implicit_units_tags_test_comp(n=n, a=a)
+        comp = JuliaImplicitComp(jlcomp=jlcomp)
+        p.model.add_subsystem("icomp_units_tags", comp, promotes_inputs=["x", "y"],
+                              promotes_outputs=["z1", "z2"])
+        p.setup()
+
+    def test_units_and_tags(self):
+        comp = self.p.model.icomp_units_tags
+
+        expected_units = {"x": "m", "y": "unitless", "z1": "kg", "z2": "unitless"}
+        expected_tags = {
+            "x": {"tag_x"},
+            "y": set(),
+            "z1": {"tag_z1a", "tag_z1b"},
+            "z2": set(),
+        }
+
+        meta = comp._var_allprocs_abs2meta
+        for iotype in ("input", "output"):
+            for name, m in meta[iotype].items():
+                var = name.split(".")[-1]
+                self.assertEqual(m["units"], expected_units[var],
+                                 msg=f"wrong units for {iotype} var {var}")
+                # Filter out tags that OpenMDAO itself adds (e.g. the
+                # "openmdao:allow_desvar" tag on outputs).
+                user_tags = {t for t in m["tags"] if not t.startswith("openmdao:")}
+                self.assertEqual(user_tags, expected_tags[var],
+                                 msg=f"wrong tags for {iotype} var {var}")
 
 
 @use_tempdirs
