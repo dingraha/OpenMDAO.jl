@@ -32,12 +32,12 @@ include("partials_data.jl")
 export PartialsData
 
 include("abstract_ad.jl")
-export get_callback, get_func, get_params, get_input_ca, get_output_ca, get_jacobian_ca, get_units, get_backend, get_prep
+export get_callback, get_func, get_params, get_input_ca, get_output_ca, get_jacobian_ca, get_units, get_backend, get_backend_fwd, get_backend_rev, get_prep
 export ADExplicitComp, ADImplicitComp,
     DerivativeFlavor, AssembledFlavor, MatrixFreeFlavor,
     DenseFlavor, SparseFlavor,
-    MatrixFreeForwardFlavor, MatrixFreeReverseFlavor,
-    DenseDerivPrep, MatrixFreeDerivPrep, SparseDerivPrep
+    MatrixFreeForwardFlavor, MatrixFreeReverseFlavor, MatrixFreeForwardReverseFlavor,
+    DenseDerivPrep, MatrixFreeDerivPrep, MatrixFreeForwardReverseDerivPrep, SparseDerivPrep
 
 include("dense_ad.jl")
 

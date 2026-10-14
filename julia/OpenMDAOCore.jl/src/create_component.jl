@@ -88,6 +88,79 @@ function create_explicit_component(flavor::DerivativeFlavor, ad_backend::TAD,
         force_skip_prep=force_skip_prep)
 end
 
+"""
+    create_explicit_component(::MatrixFreeForwardReverseFlavor, ad_backend_fwd, ad_backend_rev, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+
+Create an in-place [`MatrixFreeForwardReverseFlavor`](@ref) [`ADExplicitComp`](@ref)
+from a user-defined function and output and input `ComponentVector`s. JVPs
+(`mode="fwd"`) use `ad_backend_fwd`, which must support pushforwards; VJPs
+(`mode="rev"`) use `ad_backend_rev`, which must support pullbacks.
+
+# Positional Arguments
+* `flavor`: [`MatrixFreeForwardReverseFlavor`](@ref)
+* `ad_backend_fwd`: `<:ADTypes.AbstractADType` backend used for forward-mode (JVP) derivatives
+* `ad_backend_rev`: `<:ADTypes.AbstractADType` backend used for reverse-mode (VJP) derivatives
+* `f!`: function of the form `f!(Y_ca, X_ca, params)` which writes outputs to `Y_ca` using inputs `X_ca` and, optionally, parameters `params`.
+* `Y_ca`: `ComponentVector` of outputs
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the third argument to `f!`. Could be anything, or `nothing`, but the derivatives of `Y_ca` with respect to `params` will not be calculated.
+* `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s).
+* `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+"""
+function create_explicit_component(flavor::MatrixFreeForwardReverseFlavor, ad_backend_fwd::TADFwd, ad_backend_rev::TADRev,
+        f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(),
+        shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(),
+        force_skip_prep=false) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
+    can_jvp(ad_backend_fwd) || throw(ArgumentError("AD backend $(ad_backend_fwd) does not support JVPs (pushforwards), which are required for the forward direction of MatrixFreeForwardReverseFlavor"))
+    can_vjp(ad_backend_rev) || throw(ArgumentError("AD backend $(ad_backend_rev) does not support VJPs (pullbacks), which are required for the reverse direction of MatrixFreeForwardReverseFlavor"))
+    return ADExplicitComp(flavor, ad_backend_fwd, ad_backend_rev, f!, Y_ca, X_ca;
+        params=params, units_dict=units_dict, tags_dict=tags_dict,
+        shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict,
+        force_skip_prep=force_skip_prep)
+end
+
+"""
+    create_explicit_component(::MatrixFreeForwardReverseFlavor, ad_backend_fwd, ad_backend_rev, f, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+
+Create an out-of-place [`MatrixFreeForwardReverseFlavor`](@ref) [`ADExplicitComp`](@ref)
+from a user-defined function and input `ComponentVector`. JVPs (`mode="fwd"`) use
+`ad_backend_fwd`, which must support pushforwards; VJPs (`mode="rev"`) use
+`ad_backend_rev`, which must support pullbacks.
+
+# Positional Arguments
+* `flavor`: [`MatrixFreeForwardReverseFlavor`](@ref)
+* `ad_backend_fwd`: `<:ADTypes.AbstractADType` backend used for forward-mode (JVP) derivatives
+* `ad_backend_rev`: `<:ADTypes.AbstractADType` backend used for reverse-mode (VJP) derivatives
+* `f`: function of the form `Y_ca = f(X_ca, params)` which returns outputs `Y_ca` using inputs `X_ca` and, optionally, parameters `params`.
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the second argument to `f`. Could be anything, or `nothing`, but the derivatives of `Y_ca` with respect to `params` will not be calculated.
+* `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s).
+* `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+"""
+function create_explicit_component(flavor::MatrixFreeForwardReverseFlavor, ad_backend_fwd::TADFwd, ad_backend_rev::TADRev,
+        f::Function, X_ca::ComponentVector;
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(),
+        shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(),
+        force_skip_prep=false) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
+    can_jvp(ad_backend_fwd) || throw(ArgumentError("AD backend $(ad_backend_fwd) does not support JVPs (pushforwards), which are required for the forward direction of MatrixFreeForwardReverseFlavor"))
+    can_vjp(ad_backend_rev) || throw(ArgumentError("AD backend $(ad_backend_rev) does not support VJPs (pullbacks), which are required for the reverse direction of MatrixFreeForwardReverseFlavor"))
+    return ADExplicitComp(flavor, ad_backend_fwd, ad_backend_rev, f, X_ca;
+        params=params, units_dict=units_dict, tags_dict=tags_dict,
+        shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict,
+        force_skip_prep=force_skip_prep)
+end
+
 # ---------------------------------------------------------------------------
 # Convenience constructors for `ADImplicitComp`
 # ---------------------------------------------------------------------------
@@ -161,5 +234,71 @@ function create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_ba
         can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
     end
     return ADImplicitComp(flavor, Val(false), ad_backend, f, Y_ca, X_ca;
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
+end
+
+"""
+    create_implicit_component(::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backend_fwd, ad_backend_rev, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+
+Create an in-place [`MatrixFreeForwardReverseFlavor`](@ref) [`ADImplicitComp`](@ref)
+from a user-defined function and state/output and input `ComponentVector`s. JVPs
+(`mode="fwd"`) use `ad_backend_fwd`, which must support pushforwards; VJPs
+(`mode="rev"`) use `ad_backend_rev`, which must support pullbacks.
+
+# Positional Arguments
+* `flavor`: [`MatrixFreeForwardReverseFlavor`](@ref)
+* `ad_backend_fwd`: `<:ADTypes.AbstractADType` backend used for forward-mode (JVP) derivatives
+* `ad_backend_rev`: `<:ADTypes.AbstractADType` backend used for reverse-mode (VJP) derivatives
+* `f!`: function of the form `f!(R_ca, Y_ca, X_ca, params)` which writes residuals to `R_ca` using states/outputs `Y_ca`, inputs `X_ca` and, optionally, parameters `params`.
+* `Y_ca`: `ComponentVector` of states/outputs
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the fourth argument to `f!`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated.
+* `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s).
+* `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+"""
+function create_implicit_component(flavor::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backend_fwd::TADFwd, ad_backend_rev::TADRev,
+        f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
+    can_jvp(ad_backend_fwd) || throw(ArgumentError("AD backend $(ad_backend_fwd) does not support JVPs (pushforwards), which are required for the forward direction of MatrixFreeForwardReverseFlavor"))
+    can_vjp(ad_backend_rev) || throw(ArgumentError("AD backend $(ad_backend_rev) does not support VJPs (pullbacks), which are required for the reverse direction of MatrixFreeForwardReverseFlavor"))
+    return ADImplicitComp(flavor, Val(true), ad_backend_fwd, ad_backend_rev, f!, Y_ca, X_ca;
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
+end
+
+"""
+    create_implicit_component(::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backend_fwd, ad_backend_rev, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+
+Create an out-of-place [`MatrixFreeForwardReverseFlavor`](@ref) [`ADImplicitComp`](@ref)
+from a user-defined function and state/output and input `ComponentVector`s. JVPs
+(`mode="fwd"`) use `ad_backend_fwd`, which must support pushforwards; VJPs
+(`mode="rev"`) use `ad_backend_rev`, which must support pullbacks.
+
+# Positional Arguments
+* `flavor`: [`MatrixFreeForwardReverseFlavor`](@ref)
+* `ad_backend_fwd`: `<:ADTypes.AbstractADType` backend used for forward-mode (JVP) derivatives
+* `ad_backend_rev`: `<:ADTypes.AbstractADType` backend used for reverse-mode (VJP) derivatives
+* `f`: function of the form `R_ca = f(Y_ca, X_ca, params)` which returns residuals `R_ca` using states/outputs `Y_ca`, inputs `X_ca` and, optionally, parameters `params`.
+* `Y_ca`: `ComponentVector` of states/outputs
+* `X_ca`: `ComponentVector` of inputs
+
+# Keyword Arguments
+* `params`: parameters passed to the third argument to `f`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated.
+* `units_dict`: `Dict` mapping variable names (as `Symbol`s) to OpenMDAO units (expressed as `String`s).
+* `tags_dict`: `Dict` mapping variable names (as `Symbol`s) to `Vector`s of OpenMDAO tags.
+* `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
+* `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
+* `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+"""
+function create_implicit_component(flavor::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backend_fwd::TADFwd, ad_backend_rev::TADRev,
+        f::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
+    can_jvp(ad_backend_fwd) || throw(ArgumentError("AD backend $(ad_backend_fwd) does not support JVPs (pushforwards), which are required for the forward direction of MatrixFreeForwardReverseFlavor"))
+    can_vjp(ad_backend_rev) || throw(ArgumentError("AD backend $(ad_backend_rev) does not support VJPs (pullbacks), which are required for the reverse direction of MatrixFreeForwardReverseFlavor"))
+    return ADImplicitComp(flavor, Val(false), ad_backend_fwd, ad_backend_rev, f, Y_ca, X_ca;
         params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
 end

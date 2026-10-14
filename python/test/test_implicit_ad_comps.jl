@@ -105,6 +105,17 @@ function get_matrix_free_implicit_test_comp(; n, a, reverse)
         flavor, Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca; params=(a=a,))
 end
 
+function get_matrix_free_implicit_fwd_rev_test_comp(; n, a)
+    # Forward+reverse matrix-free flavor: JVPs via AutoForwardDiff, VJPs via
+    # AutoReverseDiff. Both `apply_linear` directions are supported.
+    Y_ca = ComponentVector(z1=zeros(n), z2=0.0)
+    X_ca = ComponentVector(x=2.0, y=ones(n))
+    return OpenMDAOCore.create_implicit_component(
+        OpenMDAOCore.MatrixFreeForwardReverseFlavor(), Val(true),
+        ADTypes.AutoForwardDiff(), ADTypes.AutoReverseDiff(), f_implicit_ad!, Y_ca, X_ca;
+        params=(a=a,))
+end
+
 function get_dense_implicit_units_tags_test_comp(; n, a)
     # `z2` and `y` are deliberately left out of the dicts so the defaults
     # ("unitless" units and no tags) are exercised too.

@@ -271,6 +271,77 @@ class TestMatrixFreeReverseImplicitAD(unittest.TestCase):
 
 
 @use_tempdirs
+class TestMatrixFreeForwardReverseImplicitAD(unittest.TestCase):
+    """
+    The forward+reverse matrix-free flavor supports both `apply_linear`
+    directions, so unlike the single-direction matrix-free flavors this comp
+    can run under OpenMDAO's Newton solver, compute totals in both directions,
+    and undergo a full `check_partials` (which requires both directions for
+    matrix-free components).
+    """
+
+    def setUp(self):
+        p = self.p = om.Problem()
+        n = self.n = 5
+        a = self.a = 3.0
+        self.x = 3.0
+        self.y = np.arange(1.0, n + 1.0)
+
+        jlcomp = jl.get_matrix_free_implicit_fwd_rev_test_comp(n=n, a=a)
+        comp = JuliaImplicitComp(jlcomp=jlcomp)
+        comp.linear_solver = om.DirectSolver(assemble_jac=False)
+        comp.nonlinear_solver = om.NewtonSolver(solve_subsystems=True, iprint=2,
+                                                err_on_non_converge=True)
+        p.model.add_subsystem("icomp_matrix_free_fwd_rev_ad", comp, promotes_inputs=["x", "y"],
+                              promotes_outputs=["z1", "z2"])
+        p.setup(force_alloc_complex=True)
+        p.set_val("x", self.x)
+        p.set_val("y", self.y)
+        p.run_model()
+
+    def test_results(self):
+        p = self.p
+        z1_expected, z2_expected = _expected_states(self.x, self.y, self.a)
+        np.testing.assert_allclose(p.get_val("z1"), z1_expected, rtol=1e-10)
+        np.testing.assert_allclose(p.get_val("z2"), z2_expected, rtol=1e-10)
+
+    def test_partials_both_directions(self):
+        # `check_partials` on matrix-free components checks both the "fwd" and
+        # "rev" directions against the finite-difference approximation; this
+        # only works when the comp supports both directions.
+        _check_partials_vs_analytic(self.p, "icomp_matrix_free_fwd_rev_ad", self.x, self.y, self.a)
+
+    def test_totals(self):
+        p = self.p
+        totals = p.compute_totals(of=["z1", "z2"], wrt=["x", "y"])
+        expected = _expected_totals(self.x, self.y, self.a)
+        for (of, wrt), J_analytic in expected.items():
+            np.testing.assert_allclose(totals[of, wrt], J_analytic, rtol=1e-6, atol=1e-8)
+
+    def test_apply_linear_rev(self):
+        comp = self.p.model.icomp_matrix_free_fwd_rev_ad
+        n = self.n
+        a = self.a
+        x = self.x
+        y = self.y
+
+        inputs = {"x": np.array([x]), "y": y.copy()}
+        outputs = {"z1": np.zeros(n), "z2": np.zeros(1)}
+        d_inputs = {"x": np.zeros(1), "y": np.zeros(n)}
+        d_outputs = {"z1": np.zeros(n), "z2": np.zeros(1)}
+        d_residuals = {"z1": np.ones(n), "z2": np.zeros(1)}
+
+        comp.apply_linear(inputs, outputs, d_inputs, d_outputs, d_residuals, "rev")
+
+        # Same VJP expectations as the reverse-only test: with seed
+        # dR.z1 = ones(n), dx = n*2*a*x and dy = 2*y (diagonal).
+        np.testing.assert_allclose(d_inputs["x"], np.array([n * 2.0 * a * x]), rtol=1e-10)
+        np.testing.assert_allclose(d_inputs["y"], 2.0 * y, rtol=1e-10)
+        np.testing.assert_allclose(d_outputs["z1"], -np.ones(n), rtol=1e-10)
+        np.testing.assert_allclose(d_outputs["z2"], np.zeros(1), rtol=1e-10)
+
+
+@use_tempdirs
 class TestDenseImplicitADUnitsTags(unittest.TestCase):
     """Verify that `units_dict`/`tags_dict` metadata propagates from the Julia
     component through omjlcomps into OpenMDAO's variable metadata.

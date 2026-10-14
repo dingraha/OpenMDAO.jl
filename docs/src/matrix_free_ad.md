@@ -146,3 +146,32 @@ nothing # hide
 ```
 
 We got the right answer, so everything's good!
+
+## Forward and reverse backends together: `MatrixFreeForwardReverseFlavor`
+
+The two matrix-free flavors above each support only one of the two `apply_linear` directions:
+`MatrixFreeForwardFlavor` computes Jacobian-vector products (JVPs) with a forward-mode backend, and
+`MatrixFreeReverseFlavor` computes vector-Jacobian products (VJPs) with a reverse-mode backend.
+When a component is checked with `check_partials`, OpenMDAO runs *both* directions for matrix-free
+components, so with the single-direction flavors one of the two directions gets filled in with
+incorrect values (OpenMDAO prints a warning when this happens).
+
+The `MatrixFreeForwardReverseFlavor` avoids that limitation by holding **two** AD backends: a
+forward-mode backend used for JVPs (`mode="fwd"`) and a reverse-mode backend used for VJPs
+(`mode="rev"`). Pass both backends to the `create_*_component` call:
+
+```julia
+comp = OpenMDAOCore.create_explicit_component(
+    OpenMDAOCore.MatrixFreeForwardReverseFlavor(),
+    ADTypes.AutoForwardDiff(),  # used for JVPs (mode="fwd")
+    ADTypes.AutoReverseDiff(),  # used for VJPs (mode="rev")
+    f_paraboloid, X_ca)
+```
+
+(The same two-backend signature is available for `create_implicit_component`, with `Val(true)` or
+`Val(false)` as before. Each backend is validated at construction: the forward one must support
+pushforwards (`OpenMDAOCore.can_jvp`) and the reverse one pullbacks (`OpenMDAOCore.can_vjp`).)
+
+With both directions available, matrix-free components built this way work under OpenMDAO's Newton
+solver, support `compute_totals` in both modes, and pass a full `check_partials` check, in which the
+JVP comes from the forward backend and the VJP from the reverse backend.

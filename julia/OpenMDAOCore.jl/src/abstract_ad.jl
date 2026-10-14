@@ -11,7 +11,8 @@ Abstract supertype for the derivative computation strategy of an
 [`ADExplicitComp`](@ref).
 
 Concrete subtypes: [`DenseFlavor`](@ref), [`SparseFlavor`](@ref),
-[`MatrixFreeForwardFlavor`](@ref), [`MatrixFreeReverseFlavor`](@ref).
+[`MatrixFreeForwardFlavor`](@ref), [`MatrixFreeReverseFlavor`](@ref),
+[`MatrixFreeForwardReverseFlavor`](@ref).
 """
 abstract type DerivativeFlavor end
 
@@ -40,7 +41,7 @@ Abstract supertype for matrix-free derivative flavors that compute
 Jacobian-vector products without materializing the Jacobian.
 
 Concrete subtypes: [`MatrixFreeForwardFlavor`](@ref),
-[`MatrixFreeReverseFlavor`](@ref).
+[`MatrixFreeReverseFlavor`](@ref), [`MatrixFreeForwardReverseFlavor`](@ref).
 """
 abstract type MatrixFreeFlavor <: DerivativeFlavor end
 
@@ -61,6 +62,18 @@ Derivative flavor that computes vector-Jacobian products (VJPs) via
 `mode="rev"` is supported.
 """
 struct MatrixFreeReverseFlavor <: MatrixFreeFlavor end
+
+"""
+    MatrixFreeForwardReverseFlavor <: MatrixFreeFlavor
+
+Derivative flavor that computes Jacobian-vector products (JVPs) via
+`DifferentiationInterface.pushforward!` with a forward-mode AD backend, *and*
+vector-Jacobian products (VJPs) via `DifferentiationInterface.pullback!` with a
+(reverse-mode) AD backend. Both `compute_jacvec_product!`/`apply_linear!`
+directions (`mode="fwd"` and `mode="rev"`) are supported, using two separate
+backends that are provided at construction time.
+"""
+struct MatrixFreeForwardReverseFlavor <: MatrixFreeFlavor end
 
 """
     SparseFlavor <: AssembledFlavor
@@ -117,6 +130,29 @@ struct MatrixFreeDerivPrep{TdX,TdY,TPrep}
 end
 
 """
+    MatrixFreeForwardReverseDerivPrep{TdX, TdY, TPrepFwd, TPrepRev}
+
+Derivative preparation data for [`MatrixFreeForwardReverseFlavor`](@ref)
+components, which use separate forward- and reverse-mode AD backends.
+
+# Fields
+* `dX_ca::TdX`: input `ComponentVector` buffer — the tangent (seed) for
+  forward-mode JVPs and the cotangent (result) for reverse-mode VJPs
+* `dY_ca::TdY`: output `ComponentVector` buffer — the tangent (result) for
+  forward-mode JVPs and the cotangent (seed) for reverse-mode VJPs
+* `prep_fwd::TPrepFwd`: `DifferentiationInterface.PushforwardPrep` created with
+  the forward backend (or `nothing` if prep was skipped)
+* `prep_rev::TPrepRev`: `DifferentiationInterface.PullbackPrep` created with the
+  reverse backend (or `nothing` if prep was skipped)
+"""
+struct MatrixFreeForwardReverseDerivPrep{TdX,TdY,TPrepFwd,TPrepRev}
+    dX_ca::TdX
+    dY_ca::TdY
+    prep_fwd::TPrepFwd
+    prep_rev::TPrepRev
+end
+
+"""
     SparseDerivPrep{TJ, TPrep}
 
 Derivative preparation data for [`SparseFlavor`](@ref) components.
@@ -143,20 +179,25 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TFunc, TParams, TCompute, TX, TY, TDP, TXCS, TYCS}
+    ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TADRev, TFunc, TParams, TCompute, TX, TY, TDP, TXCS, TYCS}
         <: AbstractExplicitComp
 
 An explicit AD component parameterized by derivative flavor `F`.
 
 # Type parameters
 * `F<:DerivativeFlavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref),
-  [`MatrixFreeReverseFlavor`](@ref), or [`SparseFlavor`](@ref)
+  [`MatrixFreeReverseFlavor`](@ref), [`MatrixFreeForwardReverseFlavor`](@ref), or [`SparseFlavor`](@ref)
 * `InPlace::Bool`: `true` for in-place functions `f!(Y, X, params)`, `false` for
   out-of-place `Y = f(X, params)`
-* `TAD`: the AD backend type (`<:ADTypes.AbstractADType`)
+* `TAD`: the AD backend type (`<:ADTypes.AbstractADType`) used for
+  forward-mode (JVP) derivatives
+* `TADRev`: the AD backend type used for reverse-mode (VJP) derivatives;
+  `Nothing` unless `F` is [`MatrixFreeForwardReverseFlavor`](@ref)
 
 # Fields
 * `ad_backend`: `<:ADTypes.AbstractADType` automatic differentiation backend
+* `ad_backend_rev`: second AD backend for reverse-mode derivatives (`nothing`
+  unless the flavor is [`MatrixFreeForwardReverseFlavor`](@ref))
 * `func`: the user-defined function (`f!` for in-place, `f` for out-of-place)
 * `params`: the parameters passed to `func` (captured by `compute_adable`)
 * `compute_adable`: closure compatible with DifferentiationInterface.jl, built from `func` and `params`
@@ -171,8 +212,9 @@ An explicit AD component parameterized by derivative flavor `F`.
 * `X_ca_cs`: `ComplexF64` copy of `X_ca` (for Python-side complex-step)
 * `Y_ca_cs`: `ComplexF64` copy of `Y_ca` (for Python-side complex-step); `nothing` for out-of-place
 """
-struct ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TFunc, TParams, TCompute, TX, TY, TDP, TXCS, TYCS} <: AbstractExplicitComp
+struct ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TADRev, TFunc, TParams, TCompute, TX, TY, TDP, TXCS, TYCS} <: AbstractExplicitComp
     ad_backend::TAD
+    ad_backend_rev::TADRev
     func::TFunc
     params::TParams
     compute_adable::TCompute
@@ -189,14 +231,15 @@ struct ADExplicitComp{F<:DerivativeFlavor, InPlace, TAD, TFunc, TParams, TComput
     function ADExplicitComp{F, InPlace}(
             ad_backend, func, params, compute_adable, X_ca, Y_ca, deriv_prep,
             units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict,
-            X_ca_cs, Y_ca_cs
+            X_ca_cs, Y_ca_cs;
+            ad_backend_rev = nothing
         ) where {F<:DerivativeFlavor, InPlace}
         return new{F, InPlace,
-                   typeof(ad_backend), typeof(func), typeof(params), typeof(compute_adable),
+                   typeof(ad_backend), typeof(ad_backend_rev), typeof(func), typeof(params), typeof(compute_adable),
                    typeof(X_ca), typeof(Y_ca),
                    typeof(deriv_prep),
                    typeof(X_ca_cs), typeof(Y_ca_cs)}(
-            ad_backend, func, params, compute_adable, X_ca, Y_ca, deriv_prep,
+            ad_backend, ad_backend_rev, func, params, compute_adable, X_ca, Y_ca, deriv_prep,
             units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict,
             X_ca_cs, Y_ca_cs)
     end
@@ -230,6 +273,18 @@ get_func(comp::ADExplicitComp) = comp.func
 get_params(comp::ADExplicitComp) = comp.params
 get_backend(comp::ADExplicitComp) = comp.ad_backend
 get_prep(comp::ADExplicitComp) = comp.deriv_prep.prep
+
+"""
+    get_backend_fwd(comp) -> backend
+    get_backend_rev(comp) -> backend
+
+Return the AD backend used for forward-mode (JVP) / reverse-mode (VJP)
+derivative computations, respectively. For all flavors except
+[`MatrixFreeForwardReverseFlavor`](@ref), `get_backend_fwd` returns the comp's
+only backend and `get_backend_rev` returns `nothing`.
+"""
+get_backend_fwd(comp::ADExplicitComp) = comp.ad_backend
+get_backend_rev(comp::ADExplicitComp) = comp.ad_backend_rev
 
 get_input_ca(::Type{Float64}, comp::ADExplicitComp) = comp.X_ca
 get_input_ca(::Type{ComplexF64}, comp::ADExplicitComp) = comp.X_ca_cs
@@ -384,7 +439,7 @@ has_compute_jacvec_product(self::ADExplicitComp{<:MatrixFreeFlavor}) = true
 # ---------------------------------------------------------------------------
 
 """
-    ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TCompute,TYX,TR,TYXCS,TRCS,TDP,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+    ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TADRev,TCompute,TYX,TR,TYXCS,TRCS,TDP,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
 
 An `<:AbstractImplicitComp` differentiated via automatic differentiation
 
@@ -393,13 +448,18 @@ call by concatenating the output (state) vector `Y` and input vector `X` into a 
 differentiating with respect to `YX`.
 
 * `F<:DerivativeFlavor`: [`DenseFlavor`](@ref), [`MatrixFreeForwardFlavor`](@ref),
-  [`MatrixFreeReverseFlavor`](@ref), or [`SparseFlavor`](@ref)
+  [`MatrixFreeReverseFlavor`](@ref), [`MatrixFreeForwardReverseFlavor`](@ref), or [`SparseFlavor`](@ref)
 * `InPlace::Bool`: `true` for in-place functions `f!(R, Y, X, params)`, `false` for
   out-of-place `R = f(Y, X, params)`
-* `TAD`: the AD backend type (`<:ADTypes.AbstractADType`)
+* `TAD`: the AD backend type (`<:ADTypes.AbstractADType`) used for
+  forward-mode (JVP) derivatives
+* `TADRev`: the AD backend type used for reverse-mode (VJP) derivatives;
+  `Nothing` unless `F` is [`MatrixFreeForwardReverseFlavor`](@ref)
 
 # Fields
 * `ad_backend::TAD`: `<:ADTypes.AbstractADType` automatic differentiation backend
+* `ad_backend_rev::TADRev`: second AD backend for reverse-mode derivatives
+  (`nothing` unless the flavor is [`MatrixFreeForwardReverseFlavor`](@ref))
 * `compute_adable::TCompute`: closure of the form `compute_adable(R, YX)` (in-place) or
   `R = compute_adable(YX)` (out-of-place) compatible with DifferentiationInterface.jl,
 where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is the residuals
@@ -420,8 +480,9 @@ where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is
 * `Y_axes::TYAx`: axes information for outputs (states)
 * `X_axes::TXAx`: axes information for inputs
 """
-struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TFunc,TParams,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TSBC,TCS,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TADRev,TFunc,TParams,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TSBC,TCS,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
     ad_backend::TAD
+    ad_backend_rev::TADRev
     compute_adable::TCompute
     func::TFunc
     params::TParams
@@ -439,16 +500,16 @@ struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TFunc,TParams,TCompute,TYX
     Y_axes::TYAx
     X_axes::TXAx
 
-    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes) where {F<:DerivativeFlavor, InPlace}
+    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev = nothing) where {F<:DerivativeFlavor, InPlace}
         return new{F, InPlace,
-                   typeof(ad_backend), typeof(func), typeof(params), typeof(compute_adable),
+                   typeof(ad_backend), typeof(ad_backend_rev), typeof(func), typeof(params), typeof(compute_adable),
                    typeof(YX_ca), typeof(R_ca),
                    typeof(YX_ca_cs), typeof(R_ca_cs),
                    typeof(deriv_prep),
                    typeof(units_dict), typeof(tags_dict),
                    typeof(shape_by_conn_dict), typeof(copy_shape_dict),
                    typeof(Y_range), typeof(X_range), typeof(Y_axes), typeof(X_axes)}(
-            ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            ad_backend, ad_backend_rev, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
     end
 end
 
@@ -480,6 +541,18 @@ get_func(comp::ADImplicitComp) = comp.func
 get_params(comp::ADImplicitComp) = comp.params
 get_backend(comp::ADImplicitComp) = comp.ad_backend
 get_prep(comp::ADImplicitComp) = comp.deriv_prep.prep
+
+"""
+    get_backend_fwd(comp) -> backend
+    get_backend_rev(comp) -> backend
+
+Return the AD backend used for forward-mode (JVP) / reverse-mode (VJP)
+derivative computations, respectively. For all flavors except
+[`MatrixFreeForwardReverseFlavor`](@ref), `get_backend_fwd` returns the comp's
+only backend and `get_backend_rev` returns `nothing`.
+"""
+get_backend_fwd(comp::ADImplicitComp) = comp.ad_backend
+get_backend_rev(comp::ADImplicitComp) = comp.ad_backend_rev
 
 get_combined_ca(::Type{<:AbstractFloat}, comp::ADImplicitComp) = comp.YX_ca
 get_combined_ca(::Type{Complex{T}}, comp::ADImplicitComp) where {T<:AbstractFloat} = comp.YX_ca_cs

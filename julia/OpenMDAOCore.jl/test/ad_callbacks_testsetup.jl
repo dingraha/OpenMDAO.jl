@@ -15,7 +15,7 @@ using Zygote: Zygote
 using OpenMDAOCore: VarData, PartialsData,
     AbstractComp, AbstractExplicitComp, AbstractImplicitComp,
     ADExplicitComp, ADImplicitComp, create_explicit_component, create_implicit_component,
-    DenseFlavor, SparseFlavor, MatrixFreeForwardFlavor, MatrixFreeReverseFlavor,
+    DenseFlavor, SparseFlavor, MatrixFreeForwardFlavor, MatrixFreeReverseFlavor, MatrixFreeForwardReverseFlavor,
     get_input_ca, get_output_ca, get_jacobian_ca, get_jacobian_ca,
     get_rows_cols, get_rows_cols_dict, get_rows_cols_dict_from_sparsity,
     get_dinput_ca, get_doutput_ca,
@@ -41,7 +41,9 @@ export f_simple!, f_simple, f_simple_no_params!,
     doit_out_of_place_forward, doit_out_of_place_reverse,
     doit_in_place_implicit, doit_out_of_place_implicit,
     doit_in_place_forward_implicit, doit_in_place_reverse_implicit,
-    doit_out_of_place_forward_implicit, doit_out_of_place_reverse_implicit
+    doit_out_of_place_forward_implicit, doit_out_of_place_reverse_implicit,
+    doit_in_place_fwd_rev, doit_out_of_place_fwd_rev, doit_in_place_fwd_rev_sbc,
+    doit_in_place_fwd_rev_implicit, doit_out_of_place_fwd_rev_implicit, doit_in_place_fwd_rev_sbc_implicit
 
 function f_simple!(Y, X, params)
     a = only(X[:a])
@@ -2894,6 +2896,107 @@ function doit_in_place(prep::AutosparseImplicitAutomaticShapeByConnTestPrep)
 
     do_compute_residuals_check(comp)
     do_compute_partials_check(comp)
+end
+
+# ── Forward+reverse (MatrixFreeForwardReverseFlavor) helpers ─────────────────
+
+# Construct a reverse-mode AD backend from a string, mirroring the if/else
+# chains in the `*TestPrep` constructors.
+function _rev_ad_backend(ad_type_rev)
+    if ad_type_rev == "reversediff"
+        return ADTypes.AutoReverseDiff()
+    else
+        error("unexpected ad_type_rev = $(ad_type_rev)")
+    end
+end
+
+function doit_in_place_fwd_rev(prep::AutoMatrixFreeTestPrep, ad_type_rev::AbstractString)
+    M = prep.M
+    N = prep.N
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend_fwd = prep.ad_backend
+    ad_backend_rev = _rev_ad_backend(ad_type_rev)
+    comp = create_explicit_component(MatrixFreeForwardReverseFlavor(), ad_backend_fwd, ad_backend_rev, f_simple!, Y_ca, X_ca;
+        params=(M, N), force_skip_prep=prep.disable_prep)
+    do_compute_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+    do_compute_jacvec_product_check_reverse(comp)
+end
+
+function doit_out_of_place_fwd_rev(prep::AutoMatrixFreeTestPrep, ad_type_rev::AbstractString)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend_fwd = prep.ad_backend
+    ad_backend_rev = _rev_ad_backend(ad_type_rev)
+    comp = create_explicit_component(MatrixFreeForwardReverseFlavor(), ad_backend_fwd, ad_backend_rev, f_simple, X_ca;
+        params=(prep.M, prep.N), force_skip_prep=prep.disable_prep)
+    do_compute_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+    do_compute_jacvec_product_check_reverse(comp)
+end
+
+function doit_in_place_fwd_rev_sbc(prep::AutoMatrixFreeShapeByConnTestPrep, ad_type_rev::AbstractString)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend_fwd = prep.ad_backend
+    ad_backend_rev = _rev_ad_backend(ad_type_rev)
+    comp = create_explicit_component(MatrixFreeForwardReverseFlavor(), ad_backend_fwd, ad_backend_rev, f_simple_no_params!, Y_ca, X_ca;
+        force_skip_prep=prep.disable_prep, shape_by_conn_dict=prep.shape_by_conn_dict)
+    # Now set the sizes to the correct things.
+    N = prep.N
+    M = prep.M
+    input_sizes = Dict(:b=>N, :d=>(M, N))
+    output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
+    do_compute_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+    do_compute_jacvec_product_check_reverse(comp)
+end
+
+function doit_in_place_fwd_rev_implicit(prep::AutoMatrixFreeImplicitTestPrep, ad_type_rev::AbstractString)
+    M = prep.M
+    N = prep.N
+    params = (M, N)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend_fwd = prep.ad_backend
+    ad_backend_rev = _rev_ad_backend(ad_type_rev)
+    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(true), ad_backend_fwd, ad_backend_rev, f_implicit!, Y_ca, X_ca;
+        params=params, force_skip_prep=prep.force_skip_prep)
+    do_compute_residuals_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+    do_compute_jacvec_product_check_reverse(comp)
+end
+
+function doit_out_of_place_fwd_rev_implicit(prep::AutoMatrixFreeImplicitTestPrep, ad_type_rev::AbstractString)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend_fwd = prep.ad_backend
+    ad_backend_rev = _rev_ad_backend(ad_type_rev)
+    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(false), ad_backend_fwd, ad_backend_rev, f_implicit, Y_ca, X_ca;
+        force_skip_prep=prep.force_skip_prep)
+    do_compute_residuals_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+    do_compute_jacvec_product_check_reverse(comp)
+end
+
+function doit_in_place_fwd_rev_sbc_implicit(prep::AutoMatrixFreeImplicitShapeByConnTestPrep, ad_type_rev::AbstractString)
+    X_ca = prep.X_ca
+    Y_ca = prep.Y_ca
+    ad_backend_fwd = prep.ad_backend
+    ad_backend_rev = _rev_ad_backend(ad_type_rev)
+    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(true), ad_backend_fwd, ad_backend_rev, f_implicit_no_params!, Y_ca, X_ca;
+        shape_by_conn_dict=prep.shape_by_conn_dict, copy_shape_dict=prep.copy_shape_dict)
+    # Now set the sizes to the correct things.
+    N = prep.N
+    M = prep.M
+    input_sizes = Dict(:b=>N, :d=>(M, N))
+    output_sizes = Dict(:e=>N, :f=>(M, N), :g=>(N, M))
+    comp = OpenMDAOCore._update_prep(comp, input_sizes, output_sizes)
+    do_compute_residuals_check(comp)
+    do_compute_jacvec_product_check_forward(comp)
+    do_compute_jacvec_product_check_reverse(comp)
 end
 
 end # module
