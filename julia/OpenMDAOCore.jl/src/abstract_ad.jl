@@ -646,16 +646,6 @@ function get_partials_data(self::ADImplicitComp{<:MatrixFreeFlavor})
     return Vector{PartialsData}()
 end
 
-"""
-    setup(self::ADImplicitComp)
-
-Return `input_data`, `output_data`, and `partials_data` describing the implicit AD component to OpenMDAO.
-`input_data` and `output_data` are `Vector`s of [`VarData`](@ref) describing the inputs and state/output variables, respectively.
-`partials_data` is empty: the sub-Jacobians are declared by [`setup_partials`](@ref), which OpenMDAO calls after the
-variable shapes are known (this also supports `shape_by_conn`/`copy_shape` variables). The sub-Jacobians are:
-a single dense (`"*", "*"`) entry for [`DenseFlavor`](@ref), per-entry `rows`/`cols` data for [`SparseFlavor`](@ref),
-and an empty `Vector` for the matrix-free flavors (which use the OpenMDAO matrix-free API via `apply_linear!` instead).
-"""
 function OpenMDAOCore.setup(self::ADImplicitComp)
     input_data = get_input_var_data(self)
     output_data = get_output_var_data(self)
