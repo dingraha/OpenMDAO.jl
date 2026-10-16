@@ -2,7 +2,20 @@ abstract type AbstractComp end
 abstract type AbstractExplicitComp <: AbstractComp end
 abstract type AbstractImplicitComp <: AbstractComp end
 
-struct OpenMDAOMethodError{T} <: Exception
+"""
+    OpenMDAOCoreError
+
+Abstract supertype for all exceptions thrown by OpenMDAOCore.jl, so that user code can catch any of them with a single `catch OpenMDAOCoreError`.
+"""
+abstract type OpenMDAOCoreError <: Exception end
+
+"""
+    OpenMDAOMethodError{T}
+
+Exception thrown by the fallback (i.e. not-implemented-by-the-user) OpenMDAO interface methods, like `setup` and `compute!`, when they are called on a component that does not implement them.
+(These methods should only be called on components that implement them — OpenMDAO, via omjlcomps, uses the [`has_compute_partials`](@ref)-style functions to check — so getting this error usually means a component was called through an interface it doesn't support.)
+"""
+struct OpenMDAOMethodError{T} <: OpenMDAOCoreError
     method_name::String
 end
 
@@ -13,6 +26,27 @@ end
 
 function Base.showerror(io::IO, e::OpenMDAOMethodError{T}) where {T}
     print(io, "called fallback $(e.method_name) method for type $T")
+end
+
+"""
+    OpenMDAOPrepNotCreatedError
+
+Exception thrown when a derivative-computing method (e.g. `compute_partials!`, `linearize!`, `compute_jacvec_product!`, or `apply_linear!`) is called on an AD component whose DifferentiationInterface.jl derivative preparation has not been created yet.
+This happens when the component is created with `force_skip_prep=true`, or with `shape_by_conn`/`copy_shape` variables, before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).
+"""
+struct OpenMDAOPrepNotCreatedError <: OpenMDAOCoreError
+    comp
+    method_name::String
+end
+
+function Base.showerror(io::IO, e::OpenMDAOPrepNotCreatedError)
+    print(io, """
+        The derivative preparation for this component of type $(typeof(e.comp)) has not been created, so $(e.method_name) cannot be called. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).""")
+end
+
+# Convenience constructor for the derivative-method guards.
+function _prep_not_created_error(comp, method_name)
+    return OpenMDAOPrepNotCreatedError(comp, method_name)
 end
 
 """

@@ -480,7 +480,7 @@ function _compute_pushforward!(self::ADExplicitComp{<:MatrixFreeFlavor, true}, i
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+        isempty(dX_ca) && throw(_prep_not_created_error(self, "compute_jacvec_product!"))
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pushforward!(compute_adable, Y_ca, (dY_ca,), backend, X_ca, (dX_ca,))
@@ -527,7 +527,7 @@ function _compute_pushforward!(self::ADExplicitComp{<:MatrixFreeFlavor, false}, 
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+        isempty(dX_ca) && throw(_prep_not_created_error(self, "compute_jacvec_product!"))
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pushforward!(compute_adable, (dY_ca,), backend, X_ca, (dX_ca,))
@@ -577,7 +577,7 @@ function _compute_pullback!(self::ADExplicitComp{<:MatrixFreeFlavor, true}, inpu
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+        isempty(dX_ca) && throw(_prep_not_created_error(self, "compute_jacvec_product!"))
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pullback!(compute_adable, Y_ca, (dX_ca,), backend, X_ca, (dY_ca,))
@@ -624,7 +624,7 @@ function _compute_pullback!(self::ADExplicitComp{<:MatrixFreeFlavor, false}, inp
 
     # Now actually do the Jacobian-vector product.
     if prep === nothing
-        isempty(dX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+        isempty(dX_ca) && throw(_prep_not_created_error(self, "compute_jacvec_product!"))
         # No prep available: fall back to the prep-less DifferentiationInterface
         # methods, which prepare internally on each call.
     DifferentiationInterface.pullback!(compute_adable, (dX_ca,), backend, X_ca, (dY_ca,))

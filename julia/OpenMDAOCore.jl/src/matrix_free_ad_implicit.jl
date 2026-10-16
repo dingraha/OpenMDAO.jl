@@ -297,7 +297,7 @@ function _compute_implicit_pushforward!(comp::ADImplicitComp{<:MatrixFreeFlavor,
     dR_ca = get_dresidual_ca(comp)
     compute_adable = get_callback(comp)
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
+        isempty(dYX_ca) && throw(_prep_not_created_error(comp, "apply_linear!"))
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.
@@ -367,7 +367,7 @@ function _compute_implicit_pushforward!(comp::ADImplicitComp{<:MatrixFreeFlavor,
     dR_ca = get_dresidual_ca(comp)
     compute_adable = get_callback(comp)
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
+        isempty(dYX_ca) && throw(_prep_not_created_error(comp, "apply_linear!"))
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.
@@ -434,7 +434,7 @@ function _compute_implicit_pullback!(comp::ADImplicitComp{<:MatrixFreeFlavor, tr
     dYX_ca = get_dcombined_ca(comp)
     compute_adable = get_callback(comp)
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
+        isempty(dYX_ca) && throw(_prep_not_created_error(comp, "apply_linear!"))
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.
@@ -564,7 +564,7 @@ function _compute_implicit_pullback!(comp::ADImplicitComp{<:MatrixFreeFlavor, fa
     dYX_ca = get_dcombined_ca(comp)
     compute_adable = get_callback(comp)
     if prep === nothing
-        isempty(dYX_ca) && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (which resolves the shapes automatically).")
+        isempty(dYX_ca) && throw(_prep_not_created_error(comp, "apply_linear!"))
         # No prep available (e.g. `force_skip_prep=true`): fall back to the
         # prep-less DifferentiationInterface methods, which prepare internally
         # on each call.

@@ -326,6 +326,58 @@ end
     @test !has_guess_nonlinear(comp)
 end
 
+@testitem "OpenMDAOCore exceptions" begin
+    using OpenMDAOCore
+    using ADTypes: ADTypes
+    using ComponentArrays: ComponentVector
+    using Test
+
+    # A dense explicit component created with `force_skip_prep=true`: calling
+    # `compute_partials!` before OpenMDAO has set up the problem throws.
+    function f_simple!(Y, X, params)
+        Y[:y] .= 2.0 .* X[:x]
+        return nothing
+    end
+    comp = create_explicit_component(DenseFlavor(), ADTypes.AutoForwardDiff(), f_simple!,
+        ComponentVector(y=0.0), ComponentVector(x=1.0); force_skip_prep=true)
+    inputs = Dict("x" => 1.0)
+    partials = Dict{Any,Any}()
+
+    @test_throws OpenMDAOPrepNotCreatedError OpenMDAOCore.compute_partials!(comp, inputs, partials)
+    @test_throws OpenMDAOCoreError OpenMDAOCore.compute_partials!(comp, inputs, partials)
+
+    # The error message names the method and explains the cause.
+    err = try
+        OpenMDAOCore.compute_partials!(comp, inputs, partials)
+    catch e
+        e
+    end
+    @test err isa OpenMDAOPrepNotCreatedError
+    msg = sprint(Base.showerror, err)
+    @test occursin("compute_partials!", msg)
+    @test occursin("force_skip_prep", msg)
+    @test occursin("ADExplicitComp", msg)
+
+    # Same for the `linearize!` of a dense implicit component.
+    function f_implicit!(R, Y, X, params)
+        R[:r] .= X[:x] .- Y[:y]
+        return nothing
+    end
+    icomp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!,
+        ComponentVector(y=0.0), ComponentVector(x=1.0); force_skip_prep=true)
+    outputs = Dict("y" => 0.0)
+
+    @test_throws OpenMDAOPrepNotCreatedError OpenMDAOCore.linearize!(icomp, inputs, outputs, partials)
+
+    # Backwards compatibility: `OpenMDAOMethodError` is still thrown by the
+    # interface fallbacks and is catchable directly, and both exception types
+    # are subtypes of the `OpenMDAOCoreError` root.
+    struct NoMethodsComp <: OpenMDAOCore.AbstractExplicitComp end
+    @test_throws OpenMDAOMethodError OpenMDAOCore.compute!(NoMethodsComp(), inputs, Dict{String,Any}())
+    @test OpenMDAOMethodError <: OpenMDAOCoreError
+    @test OpenMDAOPrepNotCreatedError <: OpenMDAOCoreError
+end
+
 @testitem "get_rows_cols" begin
     using OpenMDAOCore
     using Test

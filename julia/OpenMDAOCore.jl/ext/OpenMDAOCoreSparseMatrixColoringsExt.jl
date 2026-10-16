@@ -529,7 +529,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
     prep = OpenMDAOCore.get_prep(self)
     ad_backend = OpenMDAOCore.get_backend(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+    prep === nothing && throw(_prep_not_created_error(self, "compute_partials!"))
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
@@ -583,7 +583,7 @@ function OpenMDAOCore.compute_partials!(self::OpenMDAOCore.ADExplicitComp{OpenMD
     J_ca_sparse = OpenMDAOCore.get_jacobian_ca(self)
     prep = OpenMDAOCore.get_prep(self)
     ad_backend = OpenMDAOCore.get_backend(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+    prep === nothing && throw(_prep_not_created_error(self, "compute_partials!"))
     DifferentiationInterface.jacobian!(f, J_ca_sparse, prep, ad_backend, X_ca)
 
     # Extract the derivatives from `J_ca_sparse` and put them in `partials`.
@@ -753,7 +753,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     J_ca = OpenMDAOCore.get_jacobian_ca(comp)
     prep = OpenMDAOCore.get_prep(comp)
     ad_backend = OpenMDAOCore.get_backend(comp)
-    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+    J_ca === nothing && throw(_prep_not_created_error(comp, "linearize!"))
     DifferentiationInterface.jacobian!(f!, R_ca, J_ca, prep, ad_backend, YX_ca)
 
     rcdict = OpenMDAOCore.get_rows_cols_dict(comp)
@@ -845,7 +845,7 @@ function OpenMDAOCore.linearize!(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCore.
     J_ca = OpenMDAOCore.get_jacobian_ca(comp)
     prep = OpenMDAOCore.get_prep(comp)
     ad_backend = OpenMDAOCore.get_backend(comp)
-    J_ca === nothing && error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+    J_ca === nothing && throw(_prep_not_created_error(comp, "linearize!"))
     DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, YX_ca)
 
     rcdict = OpenMDAOCore.get_rows_cols_dict(comp)

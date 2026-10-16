@@ -211,7 +211,7 @@ function OpenMDAOCore.compute_partials!(self::ADExplicitComp{DenseFlavor, true},
     Y_ca = get_output_ca(self)
     J_ca = get_jacobian_ca(self)
     prep = get_prep(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+    prep === nothing && throw(_prep_not_created_error(self, "compute_partials!"))
     ad_backend = get_backend(self)
     DifferentiationInterface.jacobian!(f!, Y_ca, J_ca, prep, ad_backend, X_ca)
 
@@ -254,7 +254,7 @@ function OpenMDAOCore.compute_partials!(self::ADExplicitComp{DenseFlavor, false}
     f = get_callback(self)
     J_ca = get_jacobian_ca(self)
     prep = get_prep(self)
-    prep === nothing && error("The DifferentiationInterface prep for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+    prep === nothing && throw(_prep_not_created_error(self, "compute_partials!"))
     ad_backend = get_backend(self)
     DifferentiationInterface.jacobian!(f, J_ca, prep, ad_backend, X_ca)
 

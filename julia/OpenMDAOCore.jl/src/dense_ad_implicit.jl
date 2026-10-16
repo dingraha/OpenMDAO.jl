@@ -213,7 +213,7 @@ function linearize!(comp::ADImplicitComp{DenseFlavor, true}, inputs, outputs, pa
     prep = get_prep(comp)
     ad_backend = get_backend(comp)
     if J_ca === nothing
-        error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+        throw(_prep_not_created_error(comp, "linearize!"))
     elseif prep === nothing
         DifferentiationInterface.jacobian!(f!, R_ca, J_ca, ad_backend, YX_ca)
     else
@@ -243,7 +243,7 @@ function linearize!(comp::ADImplicitComp{DenseFlavor, false}, inputs, outputs, p
     prep = get_prep(comp)
     ad_backend = get_backend(comp)
     if J_ca === nothing
-        error("The Jacobian for this component has not been created. This happens when the component is created with `force_skip_prep=true` or with `shape_by_conn`/`copy_shape` variables before OpenMDAO has finished setting up the problem (the latter case is resolved automatically during problem setup).")
+        throw(_prep_not_created_error(comp, "linearize!"))
     elseif prep === nothing
         DifferentiationInterface.jacobian!(f, J_ca, ad_backend, YX_ca)
     else
