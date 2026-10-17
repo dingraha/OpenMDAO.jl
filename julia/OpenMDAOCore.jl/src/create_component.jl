@@ -166,7 +166,7 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+    create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false, guess_nonlinear=nothing)
 
 Create an in-place [`ADImplicitComp`](@ref) from a user-defined function and state/output and input `ComponentVector`s.
 
@@ -188,21 +188,22 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+* `guess_nonlinear`: optional function used to override OpenMDAO's `guess_nonlinear` (via [`guess_nonlinear!`](@ref)), providing initial guesses for the states before a nonlinear solve. For in-place comps, a function of the form `f_guess!(Y_ca, R_ca, X_ca, params)`, which receives the current states (which it overwrites with its state guesses), the current residuals, and the inputs. For out-of-place comps, a function of the form `Y_ca_new = f_guess(Y_ca_old, R_ca, X_ca, params)`, which returns the updated states as a single `ComponentVector`. OpenMDAO guarantees the residuals passed to a `guess_nonlinear` callback are fresh (computed from the current inputs and outputs), but also treats them as read-only there, so `R_ca` is provided for context only. The guess function is called (via `guess_nonlinear!`) when `guess_nonlinear` is not `nothing`, which also makes `has_guess_nonlinear` return `true` for the component.
 """
 function create_implicit_component(flavor::DerivativeFlavor, ::Val{true}, ad_backend::TAD,
         f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_nonlinear=nothing) where {TAD<:ADTypes.AbstractADType}
     if flavor isa MatrixFreeForwardFlavor
         can_jvp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support JVPs (pushforwards), which are required for MatrixFreeForwardFlavor"))
     elseif flavor isa MatrixFreeReverseFlavor
         can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
     end
     return ADImplicitComp(flavor, Val(true), ad_backend, f!, Y_ca, X_ca;
-        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep, guess_func=guess_nonlinear)
 end
 
 """
-    create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false)
+    create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, force_skip_prep=false, guess_nonlinear=nothing)
 
 Create an out-of-place [`ADImplicitComp`](@ref) from a user-defined function and state/output and input `ComponentVector`s.
 
@@ -224,21 +225,22 @@ For the matrix-free flavors, `ad_backend` is validated against the flavor's requ
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+* `guess_nonlinear`: optional function used to override OpenMDAO's `guess_nonlinear` (via [`guess_nonlinear!`](@ref)), providing initial guesses for the states before a nonlinear solve. For in-place comps, a function of the form `f_guess!(Y_ca, R_ca, X_ca, params)`, which receives the current states (which it overwrites with its state guesses), the current residuals, and the inputs. For out-of-place comps, a function of the form `Y_ca_new = f_guess(Y_ca_old, R_ca, X_ca, params)`, which returns the updated states as a single `ComponentVector`. OpenMDAO guarantees the residuals passed to a `guess_nonlinear` callback are fresh (computed from the current inputs and outputs), but also treats them as read-only there, so `R_ca` is provided for context only. The guess function is called (via `guess_nonlinear!`) when `guess_nonlinear` is not `nothing`, which also makes `has_guess_nonlinear` return `true` for the component.
 """
 function create_implicit_component(flavor::DerivativeFlavor, ::Val{false}, ad_backend::TAD,
         f::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_nonlinear=nothing) where {TAD<:ADTypes.AbstractADType}
     if flavor isa MatrixFreeForwardFlavor
         can_jvp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support JVPs (pushforwards), which are required for MatrixFreeForwardFlavor"))
     elseif flavor isa MatrixFreeReverseFlavor
         can_vjp(ad_backend) || throw(ArgumentError("AD backend $(ad_backend) does not support VJPs (pullbacks), which are required for MatrixFreeReverseFlavor"))
     end
     return ADImplicitComp(flavor, Val(false), ad_backend, f, Y_ca, X_ca;
-        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep, guess_func=guess_nonlinear)
 end
 
 """
-    create_implicit_component(::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backend_fwd, ad_backend_rev, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+    create_implicit_component(::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backend_fwd, ad_backend_rev, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_nonlinear=nothing)
 
 Create an in-place [`MatrixFreeForwardReverseFlavor`](@ref) [`ADImplicitComp`](@ref)
 from a user-defined function and state/output and input `ComponentVector`s. JVPs
@@ -260,18 +262,19 @@ from a user-defined function and state/output and input `ComponentVector`s. JVPs
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+* `guess_nonlinear`: optional function used to override OpenMDAO's `guess_nonlinear` (via [`guess_nonlinear!`](@ref)), providing initial guesses for the states before a nonlinear solve. For in-place comps, a function of the form `f_guess!(Y_ca, R_ca, X_ca, params)`, which receives the current states (which it overwrites with its state guesses), the current residuals, and the inputs. For out-of-place comps, a function of the form `Y_ca_new = f_guess(Y_ca_old, R_ca, X_ca, params)`, which returns the updated states as a single `ComponentVector`. OpenMDAO guarantees the residuals passed to a `guess_nonlinear` callback are fresh (computed from the current inputs and outputs), but also treats them as read-only there, so `R_ca` is provided for context only. The guess function is called (via `guess_nonlinear!`) when `guess_nonlinear` is not `nothing`, which also makes `has_guess_nonlinear` return `true` for the component.
 """
 function create_implicit_component(flavor::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backend_fwd::TADFwd, ad_backend_rev::TADRev,
         f!::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_nonlinear=nothing) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
     can_jvp(ad_backend_fwd) || throw(ArgumentError("AD backend $(ad_backend_fwd) does not support JVPs (pushforwards), which are required for the forward direction of MatrixFreeForwardReverseFlavor"))
     can_vjp(ad_backend_rev) || throw(ArgumentError("AD backend $(ad_backend_rev) does not support VJPs (pullbacks), which are required for the reverse direction of MatrixFreeForwardReverseFlavor"))
     return ADImplicitComp(flavor, Val(true), ad_backend_fwd, ad_backend_rev, f!, Y_ca, X_ca;
-        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep, guess_func=guess_nonlinear)
 end
 
 """
-    create_implicit_component(::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backend_fwd, ad_backend_rev, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+    create_implicit_component(::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backend_fwd, ad_backend_rev, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_nonlinear=nothing)
 
 Create an out-of-place [`MatrixFreeForwardReverseFlavor`](@ref) [`ADImplicitComp`](@ref)
 from a user-defined function and state/output and input `ComponentVector`s. JVPs
@@ -293,12 +296,13 @@ from a user-defined function and state/output and input `ComponentVector`s. JVPs
 * `shape_by_conn_dict`: `Dict` mapping variable names (as `Symbol`s) to `Bool`s indicating if the variable's shape (size) will be set dynamically by a connection.
 * `copy_shape_dict`: `Dict` mapping variable names to other variable names indicating the "key" symbol should take its size from the "value" symbol.
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup.
+* `guess_nonlinear`: optional function used to override OpenMDAO's `guess_nonlinear` (via [`guess_nonlinear!`](@ref)), providing initial guesses for the states before a nonlinear solve. For in-place comps, a function of the form `f_guess!(Y_ca, R_ca, X_ca, params)`, which receives the current states (which it overwrites with its state guesses), the current residuals, and the inputs. For out-of-place comps, a function of the form `Y_ca_new = f_guess(Y_ca_old, R_ca, X_ca, params)`, which returns the updated states as a single `ComponentVector`. OpenMDAO guarantees the residuals passed to a `guess_nonlinear` callback are fresh (computed from the current inputs and outputs), but also treats them as read-only there, so `R_ca` is provided for context only. The guess function is called (via `guess_nonlinear!`) when `guess_nonlinear` is not `nothing`, which also makes `has_guess_nonlinear` return `true` for the component.
 """
 function create_implicit_component(flavor::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backend_fwd::TADFwd, ad_backend_rev::TADRev,
         f::Function, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_nonlinear=nothing) where {TADFwd<:ADTypes.AbstractADType, TADRev<:ADTypes.AbstractADType}
     can_jvp(ad_backend_fwd) || throw(ArgumentError("AD backend $(ad_backend_fwd) does not support JVPs (pushforwards), which are required for the forward direction of MatrixFreeForwardReverseFlavor"))
     can_vjp(ad_backend_rev) || throw(ArgumentError("AD backend $(ad_backend_rev) does not support VJPs (pullbacks), which are required for the reverse direction of MatrixFreeForwardReverseFlavor"))
     return ADImplicitComp(flavor, Val(false), ad_backend_fwd, ad_backend_rev, f, Y_ca, X_ca;
-        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep)
+        params=params, units_dict=units_dict, tags_dict=tags_dict, shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict, force_skip_prep=force_skip_prep, guess_func=guess_nonlinear)
 end

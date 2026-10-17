@@ -21,7 +21,7 @@ Create an in-place [`DenseFlavor`](@ref) [`ADImplicitComp`](@ref).
 * `params`: parameters passed to the fourth argument to `f!`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
-function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AbstractADType}
     # Check for name collisions between output and input keys.
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -52,7 +52,7 @@ function ADImplicitComp(::DenseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::C
         YX_ca_cs = R_ca_cs = nothing
     end
 
-    return ADImplicitComp{DenseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{DenseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 """
@@ -70,7 +70,7 @@ Create an out-of-place [`DenseFlavor`](@ref) [`ADImplicitComp`](@ref).
 * `params`: parameters passed to the third argument to `f`. Could be anything, or `nothing`, but the derivatives of `R_ca` with respect to `params` will not be calculated
 * `force_skip_prep`: if true, defer creating internal arrays and other structs until OpenMDAO calls `setup_partials` during problem setup
 """
-function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector; params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AbstractADType}
     # Check for name collisions between output and input keys.
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -99,7 +99,7 @@ function ADImplicitComp(::DenseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::C
     R_ca = nothing
     R_ca_cs = nothing
 
-    return ADImplicitComp{DenseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{DenseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 # Scatter the entries of the dense (R, YX) Jacobian `J_ca` into the `partials`
@@ -160,7 +160,7 @@ function _update_prep(comp::ADImplicitComp{DenseFlavor, true}, input_sizes::Abst
         deriv_prep, YX_ca_cs, R_ca_cs = _get_dense_prep_stuff(get_backend(comp), compute_adable, R_ca, YX_ca)
 
         comp = ADImplicitComp{DenseFlavor, true}(get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp
@@ -187,7 +187,7 @@ function _update_prep(comp::ADImplicitComp{DenseFlavor, false}, input_sizes::Abs
         R_ca_cs = nothing
 
         comp = ADImplicitComp{DenseFlavor, false}(get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp

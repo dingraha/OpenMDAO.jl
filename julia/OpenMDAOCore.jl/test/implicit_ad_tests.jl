@@ -349,3 +349,108 @@ end
     @test only(output_data).copy_shape === nothing
     @test isempty(partials_data)
 end
+
+@testitem "ADImplicitComp guess_nonlinear, dense" begin
+    using OpenMDAOCore
+    using ADTypes: ADTypes
+    using ComponentArrays
+    using ForwardDiff
+    using Test
+
+    # Simple implicit function: R = Y^2 - X = 0, so Y = sqrt(X).
+    function f_implicit!(R, Y, X, params)
+        R[:y] = only(Y[:y])^2 - only(X[:x])
+        R[:z] = only(Y[:y]) - 2.0*only(X[:x])
+        return nothing
+    end
+
+    # In-place guess function: guesses the exact solution Y = sqrt(X) and
+    # zeroes the residuals (which is a no-op, since OpenMDAO treats the
+    # residuals as read-only in `guess_nonlinear`).
+    function f_guess!(Y, R, X, params)
+        Y[:y] = sqrt(only(X[:x]))
+        R[:y] = 0.0
+        R[:z] = 0.0
+        return nothing
+    end
+
+    comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!,
+        ComponentVector(y=1.0, z=0.0), ComponentVector(x=4.0); guess_nonlinear=f_guess!)
+
+    @test comp isa ADImplicitComp
+    @test comp.guess_func === f_guess!
+    @test has_guess_nonlinear(comp) == true
+
+    inputs = Dict("x" => 4.0)
+    outputs = Dict("y" => 0.0, "z" => 0.0)
+    residuals = Dict("y" => 1.0, "z" => 1.0)
+
+    OpenMDAOCore.guess_nonlinear!(comp, inputs, outputs, residuals)
+
+    # The guess function wrote the exact solution to the outputs. The
+    # residuals are read-only in `guess_nonlinear` (OpenMDAO contract), so
+    # they are unchanged, even though the guess function zeroes them.
+    @test only(outputs["y"]) ≈ 2.0 atol=1e-12
+    @test only(outputs["z"]) ≈ 0.0 atol=1e-12
+    @test only(residuals["y"]) ≈ 1.0 atol=1e-12
+    @test only(residuals["z"]) ≈ 1.0 atol=1e-12
+
+    # A comp created without `guess_nonlinear` does not override
+    # `guess_nonlinear`, and calling it directly is an error.
+    comp_nof = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!,
+        ComponentVector(y=1.0, z=0.0), ComponentVector(x=4.0))
+    @test has_guess_nonlinear(comp_nof) == false
+    @test_throws OpenMDAOMethodError OpenMDAOCore.guess_nonlinear!(comp_nof, inputs, outputs, residuals)
+end
+
+@testitem "ADImplicitComp guess_nonlinear, dense, out-of-place" begin
+    using OpenMDAOCore
+    using ADTypes: ADTypes
+    using ComponentArrays
+    using ForwardDiff
+    using Test
+
+    function f_implicit(Y, X, params)
+        R = ComponentVector(y=only(Y[:y])^2 - only(X[:x]), z=only(Y[:y]) - 2.0*only(X[:x]))
+        return R
+    end
+
+    # Out-of-place guess function: receives the current states, the fresh
+    # current residuals, and the inputs; returns the updated states as a
+    # single ComponentVector. Reads the incoming residuals to verify they are
+    # actually received and fresh.
+    function f_guess(Y_old, R_ca, X, params)
+        scale = maximum(abs, R_ca.y) > 0.5 ? 0.0 : 1.0
+        return ComponentVector(y=sqrt(only(X[:x])), z=scale + only(Y_old.z))
+    end
+
+    comp = create_implicit_component(DenseFlavor(), Val(false), ADTypes.AutoForwardDiff(), f_implicit,
+        ComponentVector(y=1.0, z=0.0), ComponentVector(x=4.0); guess_nonlinear=f_guess)
+
+    @test comp isa ADImplicitComp
+    @test comp.guess_func === f_guess
+    @test has_guess_nonlinear(comp) == true
+
+    inputs = Dict("x" => 4.0)
+    outputs = Dict("y" => 0.0, "z" => 0.0)
+    residuals = Dict("y" => 1.0, "z" => 1.0)
+
+    OpenMDAOCore.guess_nonlinear!(comp, inputs, outputs, residuals)
+
+    @test only(outputs["y"]) ≈ 2.0 atol=1e-12
+    @test only(outputs["z"]) ≈ 0.0 atol=1e-12
+    # The residuals are read-only in `guess_nonlinear`, so they are unchanged.
+    @test only(residuals["y"]) ≈ 1.0 atol=1e-12
+    @test only(residuals["z"]) ≈ 1.0 atol=1e-12
+
+    # The guess function still receives the fresh incoming residuals: with
+    # small incoming residuals, it adds 1 to the `z` state guess instead of 0.
+    # The residuals themselves remain read-only.
+    residuals_small = Dict("y" => 0.1, "z" => 0.1)
+    outputs_small = Dict("y" => 0.0, "z" => 0.0)
+    OpenMDAOCore.guess_nonlinear!(comp, inputs, outputs_small, residuals_small)
+    @test only(outputs_small["y"]) ≈ 2.0 atol=1e-12
+    @test only(outputs_small["z"]) ≈ 1.0 atol=1e-12
+    @test only(residuals_small["y"]) ≈ 0.1 atol=1e-12
+    @test only(residuals_small["z"]) ≈ 0.1 atol=1e-12
+end

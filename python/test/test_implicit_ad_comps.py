@@ -430,5 +430,149 @@ class TestDenseImplicitADShapeByConn(unittest.TestCase):
             np.testing.assert_allclose(J, J_analytic, rtol=1e-6, atol=1e-8)
 
 
+@use_tempdirs
+class TestDenseImplicitADGuessInPlace(unittest.TestCase):
+    """End-to-end test of `guess_nonlinear` for the in-place dense AD implicit comp."""
+
+    def setUp(self):
+        p = self.p = om.Problem()
+        n = self.n = 5
+        a = self.a = 3.0
+        self.x = 3.0
+        self.y = np.arange(1.0, n + 1.0)
+
+        jlcomp = jl.get_dense_implicit_guess_test_comp(n=n, a=a, in_place=True)
+        comp = JuliaImplicitComp(jlcomp=jlcomp)
+        comp.linear_solver = om.DirectSolver(assemble_jac=True)
+        comp.nonlinear_solver = om.NewtonSolver(solve_subsystems=True, iprint=0,
+                                                err_on_non_converge=True, maxiter=10)
+        p.model.add_subsystem("icomp_dense_ad_guess", comp, promotes_inputs=["x", "y"],
+                              promotes_outputs=["z1", "z2"])
+        p.setup(force_alloc_complex=True)
+        p.set_val("x", self.x)
+        p.set_val("y", self.y)
+        p.run_model()
+
+    def test_results(self):
+        p = self.p
+        z1_expected, z2_expected = _expected_states(self.x, self.y, self.a)
+        np.testing.assert_allclose(p.get_val("z1"), z1_expected, rtol=1e-10)
+        np.testing.assert_allclose(p.get_val("z2"), z2_expected, rtol=1e-10)
+
+    def test_newton_converges_immediately(self):
+        # The guess provides the exact solution, so Newton should converge on
+        # its first residual check. Compare against the same comp *without* a
+        # guess function, which needs a full linear-solve iteration.
+        p = self.p
+        iter_count_guess = p.model.icomp_dense_ad_guess.nonlinear_solver._iter_count
+
+        p_noguess = om.Problem()
+        jlcomp = jl.get_dense_implicit_test_comp(n=self.n, a=self.a, in_place=True)
+        comp = JuliaImplicitComp(jlcomp=jlcomp)
+        comp.linear_solver = om.DirectSolver(assemble_jac=True)
+        comp.nonlinear_solver = om.NewtonSolver(solve_subsystems=True, iprint=0,
+                                                err_on_non_converge=True, maxiter=10)
+        p_noguess.model.add_subsystem("icomp", comp, promotes_inputs=["x", "y"],
+                                      promotes_outputs=["z1", "z2"])
+        p_noguess.setup()
+        p_noguess.set_val("x", self.x)
+        p_noguess.set_val("y", self.y)
+        p_noguess.run_model()
+        iter_count_noguess = p_noguess.model.icomp.nonlinear_solver._iter_count
+
+        self.assertLess(iter_count_guess, iter_count_noguess)
+
+    def test_direct_guess_call(self):
+        # Call `guess_nonlinear` directly, with a scalar `z2` entry, to
+        # exercise the copy-back of scalar outputs from Julia. Note that the
+        # residuals are read-only in `guess_nonlinear` (OpenMDAO contract), so
+        # they are not modified even though the guess function zeroes them.
+        comp = self.p.model.icomp_dense_ad_guess
+        inputs = {"x": np.array(self.x), "y": self.y.copy()}
+        outputs = {"z1": np.zeros(self.n), "z2": 0.0}
+        residuals = {"z1": np.full(self.n, 99.0), "z2": 99.0}
+        comp.guess_nonlinear(inputs, outputs, residuals)
+
+        z1_expected, z2_expected = _expected_states(self.x, self.y, self.a)
+        np.testing.assert_allclose(outputs["z1"], z1_expected, rtol=1e-10)
+        np.testing.assert_allclose(outputs["z2"], z2_expected, rtol=1e-10)
+        np.testing.assert_allclose(residuals["z1"], 99.0)  # untouched
+        np.testing.assert_allclose(residuals["z2"], 99.0)  # read-only
+
+
+@use_tempdirs
+class TestDenseImplicitADGuessOutOfPlace(unittest.TestCase):
+
+    def setUp(self):
+        p = self.p = om.Problem()
+        n = self.n = 5
+        a = self.a = 3.0
+        self.x = 3.0
+        self.y = np.arange(1.0, n + 1.0)
+
+        jlcomp = jl.get_dense_implicit_guess_test_comp(n=n, a=a, in_place=False)
+        comp = JuliaImplicitComp(jlcomp=jlcomp)
+        comp.linear_solver = om.DirectSolver(assemble_jac=True)
+        comp.nonlinear_solver = om.NewtonSolver(solve_subsystems=True, iprint=0,
+                                                err_on_non_converge=True, maxiter=10)
+        p.model.add_subsystem("icomp_dense_ad_guess", comp, promotes_inputs=["x", "y"],
+                              promotes_outputs=["z1", "z2"])
+        p.setup(force_alloc_complex=True)
+        p.set_val("x", self.x)
+        p.set_val("y", self.y)
+        p.run_model()
+
+    def test_results(self):
+        p = self.p
+        z1_expected, z2_expected = _expected_states(self.x, self.y, self.a)
+        np.testing.assert_allclose(p.get_val("z1"), z1_expected, rtol=1e-10)
+        np.testing.assert_allclose(p.get_val("z2"), z2_expected, rtol=1e-10)
+
+
+@use_tempdirs
+class TestDenseImplicitADGuessScalarResidual(unittest.TestCase):
+    """Guess function that only updates the scalar state `z2`, to verify that
+    the scalar output copy-back in omjlcomps' `guess_nonlinear` override
+    works and that untouched entries pass through unchanged."""
+
+    def setUp(self):
+        p = self.p = om.Problem()
+        n = self.n = 5
+        a = self.a = 3.0
+        self.x = 3.0
+        self.y = np.arange(1.0, n + 1.0)
+
+        jlcomp = jl.get_dense_implicit_guess_test_comp(n=n, a=a, in_place=True, scalar_only=True)
+        comp = JuliaImplicitComp(jlcomp=jlcomp)
+        comp.linear_solver = om.DirectSolver(assemble_jac=True)
+        comp.nonlinear_solver = om.NewtonSolver(solve_subsystems=True, iprint=0,
+                                                err_on_non_converge=True, maxiter=10)
+        p.model.add_subsystem("icomp_dense_ad_guess_scalar", comp, promotes_inputs=["x", "y"],
+                              promotes_outputs=["z1", "z2"])
+        p.setup(force_alloc_complex=True)
+        p.set_val("x", self.x)
+        p.set_val("y", self.y)
+        p.run_model()
+
+    def test_results(self):
+        p = self.p
+        z1_expected, z2_expected = _expected_states(self.x, self.y, self.a)
+        np.testing.assert_allclose(p.get_val("z1"), z1_expected, rtol=1e-10)
+        np.testing.assert_allclose(p.get_val("z2"), z2_expected, rtol=1e-10)
+
+    def test_direct_guess_call(self):
+        comp = self.p.model.icomp_dense_ad_guess_scalar
+        inputs = {"x": np.array(self.x), "y": self.y.copy()}
+        outputs = {"z1": np.zeros(self.n), "z2": 0.0}
+        residuals = {"z1": np.full(self.n, 99.0), "z2": 99.0}
+        comp.guess_nonlinear(inputs, outputs, residuals)
+
+        # Only the scalar state z2 was touched by the guess function.
+        np.testing.assert_allclose(outputs["z1"], 0.0)  # untouched
+        np.testing.assert_allclose(outputs["z2"], self.a * self.x + np.sum(self.y), rtol=1e-10)
+        np.testing.assert_allclose(residuals["z1"], 99.0)  # untouched
+        np.testing.assert_allclose(residuals["z2"], 99.0)  # read-only
+
+
 if __name__ == "__main__":
     unittest.main()

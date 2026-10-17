@@ -116,6 +116,65 @@ function get_matrix_free_implicit_fwd_rev_test_comp(; n, a)
         params=(a=a,))
 end
 
+# Guess functions for the `guess_nonlinear` end-to-end tests. Each guesses the
+# exact solution of the implicit system above.
+function f_guess_nonlinear_ad!(Y, R, X, params)
+    a = params.a
+    x = only(X[:x])
+    y = @view X[:y]
+
+    @. Y[:z1] = a * x^2 + y^2
+    Y[:z2] = a * x + sum(y)
+
+    fill!(R[:z1], 0.0)
+    R[:z2] = 0.0
+
+    return nothing
+end
+
+# Out-of-place guess: receives the current states, the fresh current residuals,
+# and the inputs; returns the updated states as a single ComponentVector.
+function f_guess_nonlinear_ad(Y_old, R_ca, X, params)
+    a = params.a
+    x = only(X[:x])
+    y = X[:y]
+
+    return ComponentVector(z1=a * x^2 .+ y .^ 2, z2=a * x + sum(y))
+end
+
+# Variant that only updates the *scalar* state `z2`, leaving `z1` untouched,
+# to verify pass-through behavior of the untouched entries.
+function f_guess_nonlinear_scalar_ad!(Y, R, X, params)
+    a = params.a
+    x = only(X[:x])
+    y = @view X[:y]
+
+    Y[:z2] = a * x + sum(y)
+    R[:z2] = 0.0
+
+    return nothing
+end
+
+function get_dense_implicit_guess_test_comp(; n, a, in_place, scalar_only=false)
+    guess = if scalar_only
+        f_guess_nonlinear_scalar_ad!
+    else
+        in_place ? f_guess_nonlinear_ad! : f_guess_nonlinear_ad
+    end
+    Y_ca = ComponentVector(z1=zeros(n), z2=0.0)
+    X_ca = ComponentVector(x=2.0, y=ones(n))
+    params = (a=a,)
+    if in_place
+        return OpenMDAOCore.create_implicit_component(
+            OpenMDAOCore.DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit_ad!, Y_ca, X_ca;
+            params, guess_nonlinear=guess)
+    else
+        return OpenMDAOCore.create_implicit_component(
+            OpenMDAOCore.DenseFlavor(), Val(false), ADTypes.AutoForwardDiff(), f_implicit_ad, Y_ca, X_ca;
+            params, guess_nonlinear=guess)
+    end
+end
+
 function get_dense_implicit_units_tags_test_comp(; n, a)
     # `z2` and `y` are deliberately left out of the dicts so the defaults
     # ("unitless" units and no tags) are exercised too.

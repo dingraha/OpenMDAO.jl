@@ -16,7 +16,7 @@ Create an in-place [`MatrixFreeForwardFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.pushforward!`.
 """
 function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -45,7 +45,7 @@ function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{true}, ad_backend::TAD,
         deriv_prep = MatrixFreeDerivPrep(dYX_ca, dR_ca, nothing)
     end
 
-    return ADImplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeForwardFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 """
@@ -55,7 +55,7 @@ Create an out-of-place [`MatrixFreeForwardFlavor`](@ref) [`ADImplicitComp`](@ref
 Derivatives are computed via `DifferentiationInterface.pushforward!`.
 """
 function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -84,7 +84,7 @@ function ADImplicitComp(::MatrixFreeForwardFlavor, ::Val{false}, ad_backend::TAD
 
     R_ca = R_ca_cs = nothing
 
-    return ADImplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeForwardFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 """
@@ -94,7 +94,7 @@ Create an in-place [`MatrixFreeReverseFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.pullback!`.
 """
 function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -123,7 +123,7 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{true}, ad_backend::TAD,
         deriv_prep = MatrixFreeDerivPrep(dYX_ca, dR_ca, nothing)
     end
 
-    return ADImplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeReverseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 """
@@ -133,7 +133,7 @@ Create an out-of-place [`MatrixFreeReverseFlavor`](@ref) [`ADImplicitComp`](@ref
 Derivatives are computed via `DifferentiationInterface.pullback!`.
 """
 function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AbstractADType}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AbstractADType}
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -162,7 +162,7 @@ function ADImplicitComp(::MatrixFreeReverseFlavor, ::Val{false}, ad_backend::TAD
 
     R_ca = R_ca_cs = nothing
 
-    return ADImplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return ADImplicitComp{MatrixFreeReverseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 """
@@ -174,7 +174,7 @@ JVPs (`mode="fwd"`) are computed via `DifferentiationInterface.pushforward!` usi
 using `ad_backend_rev`.
 """
 function ADImplicitComp(::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backend_fwd, ad_backend_rev, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing)
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -203,7 +203,7 @@ function ADImplicitComp(::MatrixFreeForwardReverseFlavor, ::Val{true}, ad_backen
         deriv_prep = MatrixFreeForwardReverseDerivPrep(dYX_ca, dR_ca, nothing, nothing)
     end
 
-    return ADImplicitComp{MatrixFreeForwardReverseFlavor, true}(ad_backend_fwd, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=ad_backend_rev)
+    return ADImplicitComp{MatrixFreeForwardReverseFlavor, true}(ad_backend_fwd, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=ad_backend_rev, guess_func=guess_func)
 end
 
 """
@@ -215,7 +215,7 @@ JVPs (`mode="fwd"`) are computed via `DifferentiationInterface.pushforward!` usi
 using `ad_backend_rev`.
 """
 function ADImplicitComp(::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backend_fwd, ad_backend_rev, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false)
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing)
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
         throw(ArgumentError("State and input ComponentVectors share the following key(s): $(collect(common_keys)). State and input names must be distinct."))
@@ -244,7 +244,7 @@ function ADImplicitComp(::MatrixFreeForwardReverseFlavor, ::Val{false}, ad_backe
 
     R_ca = R_ca_cs = nothing
 
-    return ADImplicitComp{MatrixFreeForwardReverseFlavor, false}(ad_backend_fwd, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=ad_backend_rev)
+    return ADImplicitComp{MatrixFreeForwardReverseFlavor, false}(ad_backend_fwd, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=ad_backend_rev, guess_func=guess_func)
 end
 
 function _update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, true}, input_sizes::AbstractDict{Symbol,<:Any}, output_sizes::AbstractDict{Symbol,<:Any})
@@ -267,7 +267,7 @@ function _update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, true}, input
         deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_forward_prep_in_place(ad_backend, compute_adable, R_ca, YX_ca, false)
 
         comp = ADImplicitComp{MatrixFreeForwardFlavor, true}(get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp
@@ -339,7 +339,7 @@ function _update_prep(comp::ADImplicitComp{MatrixFreeForwardFlavor, false}, inpu
         deriv_prep, YX_ca_cs = _get_matrix_free_forward_prep_out_of_place(ad_backend, compute_adable, similar(Y_ca), YX_ca, false)
 
         comp = ADImplicitComp{MatrixFreeForwardFlavor, false}(get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, nothing, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp
@@ -408,7 +408,7 @@ function _update_prep(comp::ADImplicitComp{MatrixFreeReverseFlavor, true}, input
         deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_reverse_prep_in_place(ad_backend, compute_adable, R_ca, YX_ca, false)
 
         comp = ADImplicitComp{MatrixFreeReverseFlavor, true}(get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp
@@ -485,7 +485,7 @@ function _update_prep(comp::ADImplicitComp{MatrixFreeReverseFlavor, false}, inpu
         deriv_prep, YX_ca_cs = _get_matrix_free_reverse_prep_out_of_place(ad_backend, compute_adable, similar(Y_ca), YX_ca, false)
 
         comp = ADImplicitComp{MatrixFreeReverseFlavor, false}(get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, nothing, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp
@@ -512,7 +512,7 @@ function _update_prep(comp::ADImplicitComp{MatrixFreeForwardReverseFlavor, true}
         deriv_prep, YX_ca_cs, R_ca_cs = _get_matrix_free_forward_reverse_prep_in_place(backend_fwd, backend_rev, compute_adable, R_ca, YX_ca, false)
 
         comp = ADImplicitComp{MatrixFreeForwardReverseFlavor, true}(backend_fwd, compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=backend_rev)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=backend_rev, guess_func=comp.guess_func)
     end
 
     return comp
@@ -540,7 +540,7 @@ function _update_prep(comp::ADImplicitComp{MatrixFreeForwardReverseFlavor, false
         deriv_prep, YX_ca_cs = _get_matrix_free_forward_reverse_prep_out_of_place(backend_fwd, backend_rev, compute_adable, similar(Y_ca), YX_ca, false)
 
         comp = ADImplicitComp{MatrixFreeForwardReverseFlavor, false}(backend_fwd, compute_adable, comp.func, comp.params, YX_ca, nothing, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=backend_rev)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev=backend_rev, guess_func=comp.guess_func)
     end
 
     return comp

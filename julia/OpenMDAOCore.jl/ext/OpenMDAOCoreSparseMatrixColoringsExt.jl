@@ -641,7 +641,7 @@ Create an in-place [`SparseFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse Jacobian.
 """
 function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, ad_backend::TAD, f!, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AutoSparse}
 
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -671,7 +671,7 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{true}, a
         YX_ca_cs = R_ca_cs = nothing
     end
 
-    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(ad_backend, compute_adable, f!, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 """
@@ -681,7 +681,7 @@ Create an out-of-place [`SparseFlavor`](@ref) [`ADImplicitComp`](@ref).
 Derivatives are computed via `DifferentiationInterface.jacobian!` into a sparse Jacobian.
 """
 function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, ad_backend::TAD, f, Y_ca::ComponentVector, X_ca::ComponentVector;
-        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false) where {TAD<:ADTypes.AutoSparse}
+        params=nothing, units_dict=Dict{Symbol,String}(), tags_dict=Dict{Symbol,Vector{String}}(), shape_by_conn_dict=Dict{Symbol,Bool}(), copy_shape_dict=Dict{Symbol,Symbol}(), force_skip_prep=false, guess_func=nothing) where {TAD<:ADTypes.AutoSparse}
 
     common_keys = intersect(keys(Y_ca), keys(X_ca))
     if !isempty(common_keys)
@@ -707,7 +707,7 @@ function OpenMDAOCore.ADImplicitComp(::OpenMDAOCore.SparseFlavor, ::Val{false}, 
     R_ca = nothing
     R_ca_cs = nothing
 
-    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+    return OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(ad_backend, compute_adable, f, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=guess_func)
 end
 
 # Compute dR/d(Y, X) with a single sparse `jacobian!` call, then scatter the
@@ -731,7 +731,7 @@ function OpenMDAOCore._update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCor
         deriv_prep, YX_ca_cs, R_ca_cs = _get_sparse_prep_stuff(OpenMDAOCore.get_backend(comp), compute_adable, R_ca, YX_ca)
 
         comp = OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, true}(OpenMDAOCore.get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp
@@ -824,7 +824,7 @@ function OpenMDAOCore._update_prep(comp::OpenMDAOCore.ADImplicitComp{OpenMDAOCor
         R_ca_cs = nothing
 
         comp = OpenMDAOCore.ADImplicitComp{OpenMDAOCore.SparseFlavor, false}(OpenMDAOCore.get_backend(comp), compute_adable, comp.func, comp.params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep,
-            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            comp.units_dict, comp.tags_dict, comp.shape_by_conn_dict, comp.copy_shape_dict, Y_range, X_range, Y_axes, X_axes; guess_func=comp.guess_func)
     end
 
     return comp

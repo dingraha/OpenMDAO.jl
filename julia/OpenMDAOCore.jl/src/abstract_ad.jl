@@ -466,6 +466,7 @@ where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is
   `ComponentVector`. Built from `func` and `params`.
 * `func::TFunc`: the user-defined function (`f!` for in-place, `f` for out-of-place)
 * `params::TParams`: the parameters passed to `func`
+* `guess_func::TGuessFunc`: user-defined `guess_nonlinear` callback function (`nothing` if not provided; see [`guess_nonlinear!`](@ref `OpenMDAOCore.guess_nonlinear!`))
 * `YX_ca::TYX`: concatenated `ComponentVector` of outputs (state) followed by inputs (the differentiation variable)
 * `R_ca::TR`: `ComponentVector` of residuals
 * `YX_ca_cs::TYXCS`: `ComplexF64` version of `YX_ca` (for the complex-step method)
@@ -480,12 +481,13 @@ where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is
 * `Y_axes::TYAx`: axes information for outputs (states)
 * `X_axes::TXAx`: axes information for inputs
 """
-struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TADRev,TFunc,TParams,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TSBC,TCS,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
+struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TADRev,TFunc,TParams,TGuessFunc,TCompute,TYX,TR,TYXCS,TRCS,TDP,TUD,TTD,TSBC,TCS,TYR,TXR,TYAx,TXAx} <: AbstractImplicitComp
     ad_backend::TAD
     ad_backend_rev::TADRev
     compute_adable::TCompute
     func::TFunc
     params::TParams
+    guess_func::TGuessFunc
     YX_ca::TYX
     R_ca::TR
     YX_ca_cs::TYXCS
@@ -500,16 +502,16 @@ struct ADImplicitComp{F<:DerivativeFlavor,InPlace,TAD,TADRev,TFunc,TParams,TComp
     Y_axes::TYAx
     X_axes::TXAx
 
-    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev = nothing) where {F<:DerivativeFlavor, InPlace}
+    function ADImplicitComp{F, InPlace}(ad_backend, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes; ad_backend_rev = nothing, guess_func = nothing) where {F<:DerivativeFlavor, InPlace}
         return new{F, InPlace,
-                   typeof(ad_backend), typeof(ad_backend_rev), typeof(func), typeof(params), typeof(compute_adable),
+                   typeof(ad_backend), typeof(ad_backend_rev), typeof(func), typeof(params), typeof(guess_func), typeof(compute_adable),
                    typeof(YX_ca), typeof(R_ca),
                    typeof(YX_ca_cs), typeof(R_ca_cs),
                    typeof(deriv_prep),
                    typeof(units_dict), typeof(tags_dict),
                    typeof(shape_by_conn_dict), typeof(copy_shape_dict),
                    typeof(Y_range), typeof(X_range), typeof(Y_axes), typeof(X_axes)}(
-            ad_backend, ad_backend_rev, compute_adable, func, params, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
+            ad_backend, ad_backend_rev, compute_adable, func, params, guess_func, YX_ca, R_ca, YX_ca_cs, R_ca_cs, deriv_prep, units_dict, tags_dict, shape_by_conn_dict, copy_shape_dict, Y_range, X_range, Y_axes, X_axes)
     end
 end
 
@@ -728,6 +730,102 @@ function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, true}, inputs
 
     return nothing
 end
+
+# ---------------------------------------------------------------------------
+# `guess_nonlinear!` — optional, only for comps that provide `guess_func`.
+# ---------------------------------------------------------------------------
+
+"""
+    guess_nonlinear!(comp::ADImplicitComp, inputs, outputs, residuals)
+
+Called by OpenMDAO before a nonlinear solve, giving the component a chance to provide initial guesses for the states.
+Only defined for [`ADImplicitComp`](@ref)s that were created with a `guess_func`; for those, `has_guess_nonlinear` returns `true`.
+
+The in-place user function has the form `f_guess!(Y_ca, R_ca, X_ca, params)`: it receives the current states in the output `ComponentVector` `Y_ca` (which it overwrites with its state guesses), the current residuals in the residual `ComponentVector` `R_ca` (pre-filled from OpenMDAO, which guarantees they are fresh — computed from the current inputs and outputs), and the inputs `X_ca`. Note that OpenMDAO treats the residuals as read-only in `guess_nonlinear`, so `R_ca` cannot be used to update the residuals; it is provided for context only.
+
+The out-of-place user function has the form `Y_ca_new = f_guess(Y_ca_old, R_ca, X_ca, params)`: it receives the current states, the fresh current residuals, and the inputs, and returns the updated states as a single `ComponentVector`. The residuals are read-only in `guess_nonlinear`, so no residual result is returned or used.
+"""
+function OpenMDAOCore.guess_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, true}, inputs, outputs, residuals)
+    TF = eltype(inputs[first(keys(inputs))])
+    X_ca = get_input_ca(TF, comp)
+    Y_ca = get_output_ca(TF, comp)
+    R_ca = get_residual_ca(TF, comp)
+
+    # Copy the inputs, outputs (states), and residuals into the ComponentArrays.
+    for iname in input_keys(comp)
+        @view(X_ca[iname]) .= inputs[string(iname)]
+    end
+    for uname in output_keys(comp)
+        @view(Y_ca[uname]) .= outputs[string(uname)]
+    end
+    for rname in keys(R_ca)
+        @view(R_ca[rname]) .= residuals[string(rname)]
+    end
+
+    # Let the user update the guesses in place.
+    f_guess! = comp.guess_func
+    f_guess! === nothing && throw(OpenMDAOMethodError(comp, "guess_nonlinear!"))
+    f_guess!(Y_ca, R_ca, X_ca, comp.params)
+
+    # Scatter the guesses back to the outputs dict. Note that the residuals
+    # are deliberately NOT written back: OpenMDAO makes the residual vector
+    # read-only in `guess_nonlinear`.
+    for uname in output_keys(comp)
+        ustr = string(uname)
+        if typeof(outputs[ustr]) <: AbstractArray
+            outputs[ustr] .= @view(Y_ca[uname])
+        else
+            outputs[ustr] = only(Y_ca[uname])
+        end
+    end
+
+    return nothing
+end
+
+function OpenMDAOCore.guess_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, false}, inputs, outputs, residuals)
+    TF = eltype(inputs[first(keys(inputs))])
+    X_ca = get_input_ca(TF, comp)
+    Y_ca = get_output_ca(TF, comp)
+    R_ca = get_residual_ca(TF, comp)
+
+    # Copy the inputs, outputs (states), and residuals into the ComponentArrays.
+    for iname in input_keys(comp)
+        @view(X_ca[iname]) .= inputs[string(iname)]
+    end
+    for uname in output_keys(comp)
+        @view(Y_ca[uname]) .= outputs[string(uname)]
+    end
+    for rname in keys(R_ca)
+        @view(R_ca[rname]) .= residuals[string(rname)]
+    end
+
+    # Call the out-of-place guess function, which returns the updated states.
+    # The residuals are read-only in `guess_nonlinear`, so the guess function
+    # does not return any residual result.
+    f_guess = comp.guess_func
+    f_guess === nothing && throw(OpenMDAOMethodError(comp, "guess_nonlinear!"))
+    Y_ca_new = f_guess(Y_ca, R_ca, X_ca, comp.params)
+
+    # Scatter the guesses back to the outputs dict. Note that the residuals
+    # are deliberately NOT written back: OpenMDAO makes the residual vector
+    # read-only in `guess_nonlinear`.
+    for uname in output_keys(comp)
+        ustr = string(uname)
+        if typeof(outputs[ustr]) <: AbstractArray
+            outputs[ustr] .= @view(Y_ca_new[uname])
+        else
+            outputs[ustr] = only(Y_ca_new[uname])
+        end
+    end
+
+    return nothing
+end
+
+# Value-based override: the type-based `which`-checking fallback would return
+# `true` for every `ADImplicitComp` once `guess_nonlinear!` is defined, which
+# would make omjlcomps override OpenMDAO's `guess_nonlinear` for comps without
+# a `guess_func`.
+has_guess_nonlinear(comp::ADImplicitComp) = comp.guess_func !== nothing
 
 function apply_nonlinear!(comp::ADImplicitComp{<:DerivativeFlavor, false}, inputs, outputs, residuals)
     # Note: `eltype(valtype(inputs))` returns `Any` for the `Dict{String, Any}` that
