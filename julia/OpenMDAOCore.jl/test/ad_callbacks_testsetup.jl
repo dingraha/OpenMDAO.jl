@@ -1750,7 +1750,7 @@ function doit_in_place_implicit(prep::AutoDenseImplicitTestPrep)
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = create_implicit_component(DenseFlavor(), Val(true), ad_backend, f_implicit!, Y_ca, X_ca; params=params)
+    comp = create_implicit_component(DenseFlavor(), true, ad_backend, f_implicit!, Y_ca, X_ca; params=params)
     do_compute_residuals_check(comp)
     do_compute_partials_check(comp)
 end
@@ -1759,7 +1759,7 @@ function doit_out_of_place_implicit(prep::AutoDenseImplicitTestPrep)
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = create_implicit_component(DenseFlavor(), Val(false), ad_backend, f_implicit, Y_ca, X_ca)
+    comp = create_implicit_component(DenseFlavor(), false, ad_backend, f_implicit, Y_ca, X_ca)
     do_compute_residuals_check(comp)
     do_compute_partials_check(comp)
 end
@@ -1803,7 +1803,7 @@ function doit_in_place_forward_implicit(prep::AutoMatrixFreeImplicitTestPrep)
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ad_backend, f_implicit!, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), true, ad_backend, f_implicit!, Y_ca, X_ca;
         params=params, force_skip_prep=prep.force_skip_prep)
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_forward(comp)
@@ -1813,7 +1813,7 @@ function doit_out_of_place_forward_implicit(prep::AutoMatrixFreeImplicitTestPrep
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(false), ad_backend, f_implicit, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), false, ad_backend, f_implicit, Y_ca, X_ca;
         force_skip_prep=prep.force_skip_prep)
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_forward(comp)
@@ -1826,7 +1826,7 @@ function doit_in_place_reverse_implicit(prep::AutoMatrixFreeImplicitTestPrep)
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = create_implicit_component(MatrixFreeReverseFlavor(), Val(true), ad_backend, f_implicit!, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeReverseFlavor(), true, ad_backend, f_implicit!, Y_ca, X_ca;
         params=params, force_skip_prep=prep.force_skip_prep)
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_reverse(comp)
@@ -1836,7 +1836,7 @@ function doit_out_of_place_reverse_implicit(prep::AutoMatrixFreeImplicitTestPrep
     X_ca = prep.X_ca
     Y_ca = prep.Y_ca
     ad_backend = prep.ad_backend
-    comp = create_implicit_component(MatrixFreeReverseFlavor(), Val(false), ad_backend, f_implicit, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeReverseFlavor(), false, ad_backend, f_implicit, Y_ca, X_ca;
         force_skip_prep=prep.force_skip_prep)
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_reverse(comp)
@@ -2651,7 +2651,7 @@ end
 
 function doit_in_place(prep::AutosparseImplicitManualTestPrep)
     statics = [2, 3, 4]
-    comp = create_implicit_component(SparseFlavor(), Val(true), prep.ad_backend, f_implicit_statics!, prep.Y_ca, prep.X_ca; params=statics)
+    comp = create_implicit_component(SparseFlavor(), true, prep.ad_backend, f_implicit_statics!, prep.Y_ca, prep.X_ca; params=statics)
     do_compute_residuals_check(comp, statics)
     do_compute_partials_check(comp, statics)
     statics .+= 1
@@ -2661,7 +2661,7 @@ end
 
 function doit_out_of_place(prep::AutosparseImplicitManualTestPrep)
     statics = [2, 3, 4]
-    comp = create_implicit_component(SparseFlavor(), Val(false), prep.ad_backend, f_implicit_statics, prep.Y_ca, prep.X_ca; params=statics)
+    comp = create_implicit_component(SparseFlavor(), false, prep.ad_backend, f_implicit_statics, prep.Y_ca, prep.X_ca; params=statics)
     do_compute_residuals_check(comp, statics)
     do_compute_partials_check(comp, statics)
     statics .+= 1
@@ -2710,7 +2710,7 @@ end
 
 function doit_in_place(prep::AutosparseImplicitAutomaticTestPrep)
     statics = [2, 3, 4]
-    comp = create_implicit_component(SparseFlavor(), Val(true), prep.ad_backend, f_implicit_statics!, prep.Y_ca, prep.X_ca; params=statics)
+    comp = create_implicit_component(SparseFlavor(), true, prep.ad_backend, f_implicit_statics!, prep.Y_ca, prep.X_ca; params=statics)
     do_compute_residuals_check(comp, statics)
     do_compute_partials_check(comp, statics)
     statics .+= 1
@@ -2720,7 +2720,7 @@ end
 
 function doit_out_of_place(prep::AutosparseImplicitAutomaticTestPrep)
     statics = [2, 3, 4]
-    comp = create_implicit_component(SparseFlavor(), Val(false), prep.ad_backend, f_implicit_statics, prep.Y_ca, prep.X_ca; params=statics)
+    comp = create_implicit_component(SparseFlavor(), false, prep.ad_backend, f_implicit_statics, prep.Y_ca, prep.X_ca; params=statics)
     do_compute_residuals_check(comp, statics)
     do_compute_partials_check(comp, statics)
     statics .+= 1
@@ -2768,7 +2768,7 @@ function doit_in_place(prep::AutoDenseImplicitShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
 
-    comp = create_implicit_component(DenseFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = create_implicit_component(DenseFlavor(), true, ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
 
     N = prep.N
     M = prep.M
@@ -2817,7 +2817,7 @@ function doit_in_place_forward(prep::AutoMatrixFreeImplicitShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
 
-    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), true, ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
 
     N = prep.N
     M = prep.M
@@ -2836,7 +2836,7 @@ function doit_in_place_reverse(prep::AutoMatrixFreeImplicitShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
 
-    comp = create_implicit_component(MatrixFreeReverseFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = create_implicit_component(MatrixFreeReverseFlavor(), true, ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
 
     N = prep.N
     M = prep.M
@@ -2886,7 +2886,7 @@ function doit_in_place(prep::AutosparseImplicitAutomaticShapeByConnTestPrep)
     shape_by_conn_dict = prep.shape_by_conn_dict
     copy_shape_dict = prep.copy_shape_dict
 
-    comp = create_implicit_component(SparseFlavor(), Val(true), ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
+    comp = create_implicit_component(SparseFlavor(), true, ad_backend, f_implicit_no_params!, Y_ca, X_ca; shape_by_conn_dict, copy_shape_dict)
 
     N = prep.N
     M = prep.M
@@ -2962,7 +2962,7 @@ function doit_in_place_fwd_rev_implicit(prep::AutoMatrixFreeImplicitTestPrep, ad
     Y_ca = prep.Y_ca
     ad_backend_fwd = prep.ad_backend
     ad_backend_rev = _rev_ad_backend(ad_type_rev)
-    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(true), ad_backend_fwd, ad_backend_rev, f_implicit!, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), true, ad_backend_fwd, ad_backend_rev, f_implicit!, Y_ca, X_ca;
         params=params, force_skip_prep=prep.force_skip_prep)
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_forward(comp)
@@ -2974,7 +2974,7 @@ function doit_out_of_place_fwd_rev_implicit(prep::AutoMatrixFreeImplicitTestPrep
     Y_ca = prep.Y_ca
     ad_backend_fwd = prep.ad_backend
     ad_backend_rev = _rev_ad_backend(ad_type_rev)
-    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(false), ad_backend_fwd, ad_backend_rev, f_implicit, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), false, ad_backend_fwd, ad_backend_rev, f_implicit, Y_ca, X_ca;
         force_skip_prep=prep.force_skip_prep)
     do_compute_residuals_check(comp)
     do_compute_jacvec_product_check_forward(comp)
@@ -2986,7 +2986,7 @@ function doit_in_place_fwd_rev_sbc_implicit(prep::AutoMatrixFreeImplicitShapeByC
     Y_ca = prep.Y_ca
     ad_backend_fwd = prep.ad_backend
     ad_backend_rev = _rev_ad_backend(ad_type_rev)
-    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(true), ad_backend_fwd, ad_backend_rev, f_implicit_no_params!, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeForwardReverseFlavor(), true, ad_backend_fwd, ad_backend_rev, f_implicit_no_params!, Y_ca, X_ca;
         shape_by_conn_dict=prep.shape_by_conn_dict, copy_shape_dict=prep.copy_shape_dict)
     # Now set the sizes to the correct things.
     N = prep.N

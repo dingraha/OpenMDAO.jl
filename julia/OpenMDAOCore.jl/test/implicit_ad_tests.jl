@@ -211,19 +211,19 @@ end
     X_ca = ComponentVector(x=4.0)
 
     # Test in-place convenience constructor
-    comp1 = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
+    comp1 = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
     @test typeof(comp1) <: ADImplicitComp
 
     # Test out-of-place convenience constructor
-    comp2 = create_implicit_component(DenseFlavor(), Val(false), ADTypes.AutoForwardDiff(), f_implicit, Y_ca, X_ca)
+    comp2 = create_implicit_component(DenseFlavor(), false, ADTypes.AutoForwardDiff(), f_implicit, Y_ca, X_ca)
     @test typeof(comp2) <: ADImplicitComp
 
     # Test matrix-free forward convenience constructor
-    comp3 = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
+    comp3 = create_implicit_component(MatrixFreeForwardFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
     @test typeof(comp3) <: ADImplicitComp
 
     # Test matrix-free reverse convenience constructor
-    comp4 = create_implicit_component(MatrixFreeReverseFlavor(), Val(true), ADTypes.AutoReverseDiff(), f_implicit!, Y_ca, X_ca)
+    comp4 = create_implicit_component(MatrixFreeReverseFlavor(), true, ADTypes.AutoReverseDiff(), f_implicit!, Y_ca, X_ca)
     @test typeof(comp4) <: ADImplicitComp
 end
 
@@ -271,7 +271,7 @@ end
     end
 
     # --- Dense ---
-    comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
+    comp = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
     # `setup` declares no partials; they come from `setup_partials` (which
@@ -286,7 +286,7 @@ end
     sparsity_detector = PerturbedDenseSparsityDetector(ADTypes.AutoForwardDiff(); atol=sparse_atol, method=:direct)
     coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
     ad_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff(); sparsity_detector=sparsity_detector, coloring_algorithm=coloring_algorithm)
-    comp = create_implicit_component(SparseFlavor(), Val(true), ad_backend, f_implicit2!, Y_ca, X_ca; kwargs...)
+    comp = create_implicit_component(SparseFlavor(), true, ad_backend, f_implicit2!, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
     @test isempty(partials_data)
@@ -303,7 +303,7 @@ end
     @test r_x.rows == [0] && r_x.cols == [0]
 
     # --- Matrix-free (no declared partials; OpenMDAO uses the matrix-free API) ---
-    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit2!, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
     @test isempty(partials_data)
@@ -311,7 +311,7 @@ end
     @test isempty(partials_data)
 
     # --- Sparse out-of-place ---
-    comp = create_implicit_component(SparseFlavor(), Val(false), ad_backend, f_implicit2, Y_ca, X_ca; kwargs...)
+    comp = create_implicit_component(SparseFlavor(), false, ad_backend, f_implicit2, Y_ca, X_ca; kwargs...)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     check_var_data(input_data, output_data)
     @test isempty(partials_data)
@@ -340,7 +340,7 @@ end
     X_ca = ComponentVector(x=4.0)
     shape_by_conn_dict = Dict(:y=>true)
     copy_shape_dict = Dict(:x=>:y)
-    comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca;
+    comp = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca;
         shape_by_conn_dict=shape_by_conn_dict, copy_shape_dict=copy_shape_dict)
     input_data, output_data, partials_data = OpenMDAOCore.setup(comp)
     @test only(input_data).shape_by_conn == false
@@ -374,7 +374,7 @@ end
         return nothing
     end
 
-    comp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!,
+    comp = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!,
         ComponentVector(y=1.0, z=0.0), ComponentVector(x=4.0); guess_nonlinear=f_guess!)
 
     @test comp isa ADImplicitComp
@@ -397,7 +397,7 @@ end
 
     # A comp created without `guess_nonlinear` does not override
     # `guess_nonlinear`, and calling it directly is an error.
-    comp_nof = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!,
+    comp_nof = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!,
         ComponentVector(y=1.0, z=0.0), ComponentVector(x=4.0))
     @test has_guess_nonlinear(comp_nof) == false
     @test_throws OpenMDAOMethodError OpenMDAOCore.guess_nonlinear!(comp_nof, inputs, outputs, residuals)
@@ -424,7 +424,7 @@ end
         return ComponentVector(y=sqrt(only(X[:x])), z=scale + only(Y_old.z))
     end
 
-    comp = create_implicit_component(DenseFlavor(), Val(false), ADTypes.AutoForwardDiff(), f_implicit,
+    comp = create_implicit_component(DenseFlavor(), false, ADTypes.AutoForwardDiff(), f_implicit,
         ComponentVector(y=1.0, z=0.0), ComponentVector(x=4.0); guess_nonlinear=f_guess)
 
     @test comp isa ADImplicitComp
@@ -453,4 +453,45 @@ end
     @test only(outputs_small["z"]) ≈ 1.0 atol=1e-12
     @test only(residuals_small["y"]) ≈ 0.1 atol=1e-12
     @test only(residuals_small["z"]) ≈ 0.1 atol=1e-12
+end
+
+@testitem "ADImplicitComp create, flavor/backend validation" begin
+    using OpenMDAOCore
+    using ADTypes: ADTypes
+    using ComponentArrays
+    using ForwardDiff
+    using SparseMatrixColorings: SparseMatrixColorings
+    using Test
+
+    function f_implicit!(R, Y, X, params)
+        R[:y] = only(Y[:y])^2 - only(X[:x])
+        return nothing
+    end
+
+    function f_implicit(Y, X, params)
+        return ComponentVector(y=only(Y[:y])^2 - only(X[:x]))
+    end
+
+    Y_ca = ComponentVector(y=1.0)
+    X_ca = ComponentVector(x=4.0)
+
+    sparse_atol = 1e-10
+    sparsity_detector = OpenMDAOCore.PerturbedDenseSparsityDetector(
+        ADTypes.AutoForwardDiff(); atol=sparse_atol, method=:direct)
+    coloring_algorithm = SparseMatrixColorings.GreedyColoringAlgorithm()
+    auto_sparse_backend = ADTypes.AutoSparse(ADTypes.AutoForwardDiff();
+                                             sparsity_detector=sparsity_detector,
+                                             coloring_algorithm=coloring_algorithm)
+
+    # SparseFlavor requires an AutoSparse backend.
+    @test_throws ArgumentError create_implicit_component(SparseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
+    @test_throws ArgumentError create_implicit_component(SparseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
+    # DenseFlavor requires a dense (non-AutoSparse) backend.
+    @test_throws ArgumentError create_implicit_component(DenseFlavor(), true, auto_sparse_backend, f_implicit!, Y_ca, X_ca)
+    @test_throws ArgumentError create_implicit_component(DenseFlavor(), Val(false), auto_sparse_backend, f_implicit!, Y_ca, X_ca)
+    # The compatible combinations work.
+    comp_dense = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca)
+    @test comp_dense isa ADImplicitComp{DenseFlavor, true}
+    comp_sparse = create_implicit_component(SparseFlavor(), false, auto_sparse_backend, f_implicit, Y_ca, X_ca)
+    @test comp_sparse isa ADImplicitComp{SparseFlavor, false}
 end

@@ -97,6 +97,6 @@ end
     @test_throws ArgumentError create_explicit_component(MatrixFreeForwardReverseFlavor(),
         prep.ad_backend, ADTypes.AutoReverseDiff(), f_simple!, prep.Y_ca, prep.X_ca; params=(4, 3))
     # AutoForwardDiff can't do VJPs, so it is not a valid reverse backend.
-    @test_throws ArgumentError create_implicit_component(MatrixFreeForwardReverseFlavor(), Val(true),
+    @test_throws ArgumentError create_implicit_component(MatrixFreeForwardReverseFlavor(), true,
         ADTypes.AutoForwardDiff(), ADTypes.AutoForwardDiff(), f_implicit!, prep.Y_ca, prep.X_ca)
 end

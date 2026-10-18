@@ -65,7 +65,7 @@ end
         return nothing
     end
 
-    comp = create_implicit_component(MatrixFreeForwardFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca;
+    comp = create_implicit_component(MatrixFreeForwardFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!, Y_ca, X_ca;
         params=params, guess_nonlinear=f_guess!)
 
     @test comp isa ADImplicitComp

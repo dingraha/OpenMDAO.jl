@@ -331,16 +331,16 @@ diode_comp = OpenMDAOCore.create_explicit_component(
     params=(Is=1e-15, Vt=0.025875), units_dict=Dict(:V_in=>"V", :V_out=>"V", :I=>"A"))
 
 node1_comp = OpenMDAOCore.create_implicit_component(
-    OpenMDAOCore.DenseFlavor(), Val(true), ad_backend, f_node!, Y_ca_N, X_ca_N;
+    OpenMDAOCore.DenseFlavor(), true, ad_backend, f_node!, Y_ca_N, X_ca_N;
     units_dict=Dict(:I_in=>"A", :I_out1=>"A", :I_out2=>"A", :V=>"V"))
 node2_comp = OpenMDAOCore.create_implicit_component(
-    OpenMDAOCore.DenseFlavor(), Val(true), ad_backend, f_node!, Y_ca_N, X_ca_N;
+    OpenMDAOCore.DenseFlavor(), true, ad_backend, f_node!, Y_ca_N, X_ca_N;
     units_dict=Dict(:I_in=>"A", :I_out1=>"A", :I_out2=>"A", :V=>"V"))
 nothing # hide
 ```
 
-Note the extra `Val(true)` argument in the `create_implicit_component` calls, indicating that the user-defined function is in-place.
-(For an out-of-place function we would pass `Val(false)`.)
+Note the extra `in_place=true` argument in the `create_implicit_component` calls, indicating that the user-defined function is in-place.
+(For an out-of-place function we would pass `in_place=false`.)
 
 The same `f_node!` function is used for both nodes.
 Node 2 only has one outgoing current (`D1.I`), so its `I_out2` input is simply left unconnected, in which case OpenMDAO uses its declared value (`0.0`) — contributing nothing to the residual.

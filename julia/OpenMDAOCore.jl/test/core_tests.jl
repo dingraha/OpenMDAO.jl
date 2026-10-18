@@ -363,7 +363,7 @@ end
         R[:r] .= X[:x] .- Y[:y]
         return nothing
     end
-    icomp = create_implicit_component(DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit!,
+    icomp = create_implicit_component(DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit!,
         ComponentVector(y=0.0), ComponentVector(x=1.0); force_skip_prep=true)
     outputs = Dict("y" => 0.0)
 

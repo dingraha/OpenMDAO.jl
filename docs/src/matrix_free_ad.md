@@ -168,8 +168,8 @@ comp = OpenMDAOCore.create_explicit_component(
     f_paraboloid, X_ca)
 ```
 
-(The same two-backend signature is available for `create_implicit_component`, with `Val(true)` or
-`Val(false)` as before. Each backend is validated at construction: the forward one must support
+(The same two-backend signature is available for `create_implicit_component`, with `in_place=true`
+or `in_place=false`. Each backend is validated at construction: the forward one must support
 pushforwards (`OpenMDAOCore.can_jvp`) and the reverse one pullbacks (`OpenMDAOCore.can_vjp`).)
 
 With both directions available, matrix-free components built this way work under OpenMDAO's Newton

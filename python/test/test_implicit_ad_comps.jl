@@ -70,10 +70,10 @@ function get_dense_implicit_test_comp(; n, a, in_place)
     params = (a=a,)
     if in_place
         return OpenMDAOCore.create_implicit_component(
-            OpenMDAOCore.DenseFlavor(), Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca; params)
+            OpenMDAOCore.DenseFlavor(), true, ad_backend, f_implicit_ad!, Y_ca, X_ca; params)
     else
         return OpenMDAOCore.create_implicit_component(
-            OpenMDAOCore.DenseFlavor(), Val(false), ad_backend, f_implicit_ad, Y_ca, X_ca; params)
+            OpenMDAOCore.DenseFlavor(), false, ad_backend, f_implicit_ad, Y_ca, X_ca; params)
     end
 end
 
@@ -88,7 +88,7 @@ function get_sparse_implicit_test_comp(; n, a)
     Y_ca = ComponentVector(z1=zeros(n), z2=0.0)
     X_ca = ComponentVector(x=2.0, y=ones(n))
     return OpenMDAOCore.create_implicit_component(
-        OpenMDAOCore.SparseFlavor(), Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca; params=(a=a,))
+        OpenMDAOCore.SparseFlavor(), true, ad_backend, f_implicit_ad!, Y_ca, X_ca; params=(a=a,))
 end
 
 function get_matrix_free_implicit_test_comp(; n, a, reverse)
@@ -102,7 +102,7 @@ function get_matrix_free_implicit_test_comp(; n, a, reverse)
         flavor = OpenMDAOCore.MatrixFreeForwardFlavor()
     end
     return OpenMDAOCore.create_implicit_component(
-        flavor, Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca; params=(a=a,))
+        flavor, true, ad_backend, f_implicit_ad!, Y_ca, X_ca; params=(a=a,))
 end
 
 function get_matrix_free_implicit_fwd_rev_test_comp(; n, a)
@@ -111,7 +111,7 @@ function get_matrix_free_implicit_fwd_rev_test_comp(; n, a)
     Y_ca = ComponentVector(z1=zeros(n), z2=0.0)
     X_ca = ComponentVector(x=2.0, y=ones(n))
     return OpenMDAOCore.create_implicit_component(
-        OpenMDAOCore.MatrixFreeForwardReverseFlavor(), Val(true),
+        OpenMDAOCore.MatrixFreeForwardReverseFlavor(), true,
         ADTypes.AutoForwardDiff(), ADTypes.AutoReverseDiff(), f_implicit_ad!, Y_ca, X_ca;
         params=(a=a,))
 end
@@ -166,11 +166,11 @@ function get_dense_implicit_guess_test_comp(; n, a, in_place, scalar_only=false)
     params = (a=a,)
     if in_place
         return OpenMDAOCore.create_implicit_component(
-            OpenMDAOCore.DenseFlavor(), Val(true), ADTypes.AutoForwardDiff(), f_implicit_ad!, Y_ca, X_ca;
+            OpenMDAOCore.DenseFlavor(), true, ADTypes.AutoForwardDiff(), f_implicit_ad!, Y_ca, X_ca;
             params, guess_nonlinear=guess)
     else
         return OpenMDAOCore.create_implicit_component(
-            OpenMDAOCore.DenseFlavor(), Val(false), ADTypes.AutoForwardDiff(), f_implicit_ad, Y_ca, X_ca;
+            OpenMDAOCore.DenseFlavor(), false, ADTypes.AutoForwardDiff(), f_implicit_ad, Y_ca, X_ca;
             params, guess_nonlinear=guess)
     end
 end
@@ -184,7 +184,7 @@ function get_dense_implicit_units_tags_test_comp(; n, a)
     Y_ca = ComponentVector(z1=zeros(n), z2=0.0)
     X_ca = ComponentVector(x=2.0, y=ones(n))
     return OpenMDAOCore.create_implicit_component(
-        OpenMDAOCore.DenseFlavor(), Val(true), ad_backend, f_implicit_ad!, Y_ca, X_ca;
+        OpenMDAOCore.DenseFlavor(), true, ad_backend, f_implicit_ad!, Y_ca, X_ca;
         params=(a=a,), units_dict=units_dict, tags_dict=tags_dict)
 end
 
@@ -197,7 +197,7 @@ function get_dense_implicit_shape_by_conn_test_comp(; n, a, scale)
     shape_by_conn_dict = Dict(:y=>true)
     copy_shape_dict = Dict(:z=>:y)
     return OpenMDAOCore.create_implicit_component(
-        OpenMDAOCore.DenseFlavor(), Val(true), ad_backend, f_implicit_sbc!, Y_ca, X_ca;
+        OpenMDAOCore.DenseFlavor(), true, ad_backend, f_implicit_sbc!, Y_ca, X_ca;
         params=(a=a, scale=scale), shape_by_conn_dict=shape_by_conn_dict,
         copy_shape_dict=copy_shape_dict)
 end
