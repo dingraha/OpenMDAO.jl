@@ -466,7 +466,7 @@ where `YX` is the concatenated output (state)+input `ComponentVector` and `R` is
   `ComponentVector`. Built from `func` and `params`.
 * `func::TFunc`: the user-defined function (`f!` for in-place, `f` for out-of-place)
 * `params::TParams`: the parameters passed to `func`
-* `guess_func::TGuessFunc`: user-defined `guess_nonlinear` callback function (`nothing` if not provided; see [`guess_nonlinear!`](@ref `OpenMDAOCore.guess_nonlinear!`))
+* `guess_func::TGuessFunc`: user-defined `guess_nonlinear` callback function (`nothing` if not provided; see [`guess_nonlinear!`](@ref))
 * `YX_ca::TYX`: concatenated `ComponentVector` of outputs (state) followed by inputs (the differentiation variable)
 * `R_ca::TR`: `ComponentVector` of residuals
 * `YX_ca_cs::TYXCS`: `ComplexF64` version of `YX_ca` (for the complex-step method)

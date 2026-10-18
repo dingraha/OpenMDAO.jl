@@ -268,15 +268,17 @@ end
 """
     guess_nonlinear!(self::AbstractImplicitComp, inputs, outputs, residuals)
 
-Optional method for user-defined `<:AbstractImplicitComp`s, called by OpenMDAO before a nonlinear solve, giving the component a chance to provide initial guesses for the states (`outputs`) and/or the `residuals`, based on the `inputs`.
+Optional method for user-defined `<:AbstractImplicitComp`s, called by OpenMDAO before a nonlinear solve, giving the component a chance to provide initial guesses for the states (`outputs`), based on the `inputs`.
 If the component does not implement this method, the values declared in `setup` are used as the initial guesses.
 (OpenMDAO only calls this method if the component implements it; see [`has_guess_nonlinear`](@ref).)
+
+Note that, although OpenMDAO computes the current residuals and passes them in, the residual vector is treated as read-only in `guess_nonlinear`, so the `residuals` argument is provided for context only; any changes to it are ignored.
 
 # Arguments
 * `self`: the component.
 * `inputs`: a `Dict`-like object mapping the input variable names (`String`s) to their current values.
 * `outputs`: a `Dict`-like object mapping the state (output) variable names (`String`s) to writable storage for the initial guesses.
-* `residuals`: a `Dict`-like object mapping the state (output) variable names to writable storage for the initial residual guesses.
+* `residuals`: a `Dict`-like object mapping the state (output) variable names to their current, freshly-computed residuals. OpenMDAO treats the residuals as read-only in `guess_nonlinear`, so this argument is for context only.
 
 # Returns
 `nothing`.

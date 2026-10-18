@@ -345,7 +345,7 @@ Note the extra `Val(true)` argument in the `create_implicit_component` calls, in
 The same `f_node!` function is used for both nodes.
 Node 2 only has one outgoing current (`D1.I`), so its `I_out2` input is simply left unconnected, in which case OpenMDAO uses its declared value (`0.0`) — contributing nothing to the residual.
 
-Implicit components can also customize the initial state guesses that OpenMDAO's nonlinear solvers use: pass a guess function via the `guess_nonlinear` keyword argument to `create_implicit_component` (see its docstring for the in-place and out-of-place signatures), and OpenMDAO will call it through [`guess_nonlinear!`](@ref) before each nonlinear solve.
+Implicit components can also customize the initial state guesses that OpenMDAO's nonlinear solvers use: pass a guess function via the `guess_nonlinear` keyword argument to `create_implicit_component` (see its docstring for the in-place and out-of-place signatures), and OpenMDAO will call it through [`OpenMDAOCore.guess_nonlinear!`](@ref) before each nonlinear solve.
 
 ### The Run Script
 
